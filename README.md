@@ -423,7 +423,8 @@ You can add AI providers by implementing the `ArbigentAi` interface.
 | OS          | Supported | Test Status in the Arbigent repository            |
 |-------------|-----------|---------------------------------------------------|
 | Android     | Yes       | End-to-End including Android emulator and real AI |
-| iOS         | Yes       | End-to-End including iOS simulator and real AI    |
+| iOS Simulator | Yes     | End-to-End including iOS simulator and real AI    |
+| iOS real device | Experimental | XCTest backend requires an unlocked paired device and an `iphoneos` XCTest runner. Mirror backend is a visual fallback only. See [iOS Real Device Backends](docs/ios-real-device.md). |
 | Web(Chrome) | Yes       | Currently, Testing not yet conducted              |
 
 You can add OSes by implementing the `ArbigentDevice` interface. Thanks to the excellent [Maestro](https://github.com/mobile-dev-inc/maestro) library, we are able to support multiple OSes.

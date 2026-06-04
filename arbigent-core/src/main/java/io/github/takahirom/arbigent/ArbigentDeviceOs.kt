@@ -12,6 +12,9 @@ import util.XCRunnerCLIUtils
 import xcuitest.XCTestClient
 import xcuitest.XCTestDriverClient
 import xcuitest.installer.LocalXCTestInstaller
+import xcuitest.installer.XCTestInstaller
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 public enum class ArbigentDeviceOs {
   Android, Ios, Web;
@@ -95,6 +98,73 @@ public sealed interface ArbigentAvailableDevice {
     }
   }
 
+  public class IOSRealMirror(
+    private val config: IosRealMirrorDeviceConfig,
+  ) : ArbigentAvailableDevice {
+    override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Ios
+    override val name: String = "iOS real mirror${config.deviceId?.let { " ($it)" }.orEmpty()}"
+
+    public override fun connectToDevice(): ArbigentDevice {
+      return IosRealMirrorDevice(config)
+    }
+  }
+
+  public class IOSRealXCTest(
+    private val config: IosRealXCTestDeviceConfig,
+  ) : ArbigentAvailableDevice {
+    override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Ios
+    override val name: String = "iOS real XCTest (${config.deviceName}, ${config.deviceId})"
+
+    public override fun connectToDevice(): ArbigentDevice {
+      val portForwarder = if (config.autoStartIproxy) {
+        IosRealXCTestPortForwarder(deviceId = config.deviceId, localPort = config.port, devicePort = config.port).also {
+          it.start()
+        }
+      } else {
+        null
+      }
+      val xcTestInstaller: XCTestInstaller = config.xctestrunFile?.let { xctestrunFile ->
+        ArbigentExternalXCTestInstaller(
+          deviceId = config.deviceId,
+          host = config.host,
+          port = config.port,
+          xctestrunFile = File(xctestrunFile),
+          enableXCTestOutputFileLogging = true,
+          reinstallDriver = config.reinstallDriver,
+        )
+      } ?: LocalXCTestInstaller(
+        deviceId = config.deviceId,
+        host = config.host,
+        defaultPort = config.port,
+        enableXCTestOutputFileLogging = true,
+        preBuiltRunner = config.preBuiltRunner,
+        reinstallDriver = config.reinstallDriver,
+      )
+      try {
+        val xcTestDriverClient = XCTestDriverClient(
+          installer = xcTestInstaller,
+          client = XCTestClient(config.host, config.port),
+        )
+        val xcTestDevice = XCTestIOSDevice(
+          deviceId = config.deviceId,
+          client = xcTestDriverClient,
+          getInstalledApps = { IosRealDeviceCatalog.installedBundleIds(config.deviceId) },
+        )
+        val maestroDevice = MaestroDevice(
+          Maestro.ios(
+            IOSDriver(xcTestDevice)
+          ),
+          availableDevice = this
+        )
+        return IosRealXCTestArbigentDevice(maestroDevice, portForwarder)
+      } catch (throwable: Throwable) {
+        runCatching { xcTestInstaller.close() }
+        portForwarder?.close()
+        throw throwable
+      }
+    }
+  }
+
   public class Web : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Web
     override val name: String = "Chrome"
@@ -116,4 +186,55 @@ public sealed interface ArbigentAvailableDevice {
   }
 
   public fun connectToDevice(): ArbigentDevice
+}
+
+internal class IosRealXCTestArbigentDevice(
+  private val delegate: ArbigentDevice,
+  private val portForwarder: IosRealXCTestPortForwarder?,
+) : ArbigentDevice by delegate {
+  override fun close() {
+    runCatching { delegate.close() }
+    portForwarder?.close()
+  }
+}
+
+internal class IosRealXCTestPortForwarder(
+  private val deviceId: String,
+  private val localPort: Int,
+  private val devicePort: Int,
+) : AutoCloseable {
+  private var process: Process? = null
+
+  fun start() {
+    if (!commandExists("iproxy")) {
+      arbigentWarnLog("iproxy is not available; XCTest real-device HTTP channel may be unreachable.")
+      return
+    }
+    if (process?.isAlive == true) return
+    process = ProcessBuilder(
+      "iproxy",
+      "--udid",
+      deviceId,
+      "$localPort:$devicePort",
+    )
+      .redirectOutput(ProcessBuilder.Redirect.PIPE)
+      .redirectError(ProcessBuilder.Redirect.PIPE)
+      .start()
+    Thread.sleep(500)
+  }
+
+  override fun close() {
+    process?.destroy()
+    if (process?.waitFor(2, TimeUnit.SECONDS) == false) {
+      process?.destroyForcibly()
+    }
+    process = null
+  }
+
+  private fun commandExists(command: String): Boolean {
+    return runCatching {
+      val probe = ProcessBuilder("/bin/zsh", "-lc", "command -v $command >/dev/null 2>&1").start()
+      probe.waitFor(2, TimeUnit.SECONDS) && probe.exitValue() == 0
+    }.getOrDefault(false)
+  }
 }

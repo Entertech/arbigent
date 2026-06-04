@@ -54,6 +54,8 @@ dependencies {
   implementation(libs.identity.jvm)
   implementation(project(":arbigent-core-model"))
   implementation("io.github.darkxanter:webp-imageio:0.3.3")
+  implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
+  implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.17.2")
 
   implementation("co.touchlab:kermit:2.0.4")
   testImplementation(kotlin("test"))

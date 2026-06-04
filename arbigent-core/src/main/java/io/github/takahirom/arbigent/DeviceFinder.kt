@@ -11,13 +11,19 @@ public fun fetchAvailableDevicesByOs(deviceType: ArbigentDeviceOs): List<Arbigen
     }
 
     ArbigentDeviceOs.Ios -> {
-      LocalSimulatorUtils.list()
-        .devices
-        .flatMap { runtime ->
-          runtime.value
-            .filter { it.isAvailable && it.state == "Booted" }
-        }
-        .map { ArbigentAvailableDevice.IOS(it) }
+      if (IosRealMirrorDeviceConfig.isEnabled()) {
+        listOf(ArbigentAvailableDevice.IOSRealMirror(IosRealMirrorDeviceConfig.fromEnvironment()))
+      } else if (IosRealXCTestDeviceConfig.isEnabled()) {
+        listOf(ArbigentAvailableDevice.IOSRealXCTest(IosRealXCTestDeviceConfig.fromEnvironment()))
+      } else {
+        LocalSimulatorUtils.list()
+          .devices
+          .flatMap { runtime ->
+            runtime.value
+              .filter { it.isAvailable && it.state == "Booted" }
+          }
+          .map { ArbigentAvailableDevice.IOS(it) }
+      }
     }
 
     else -> {
