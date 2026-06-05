@@ -10,7 +10,6 @@ import com.github.ajalt.clikt.sources.ValueSource
 import com.github.ajalt.clikt.sources.ChainedValueSource
 import io.github.takahirom.arbigent.ArbigentAppSettings
 import io.github.takahirom.arbigent.ArbigentInternalApi
-import java.io.File
 
 /**
  * Custom implementation of [ArbigentAppSettings] for CLI.
@@ -26,17 +25,7 @@ class ArbigentCli : CliktCommand(name = "arbigent") {
   init {
     context {
       // Configuration file priority order: local.yml > local.yaml > settings.yml > settings.yaml
-      val configFileNames = listOf(
-        ".arbigent/settings.local.yml",
-        ".arbigent/settings.local.yaml", 
-        ".arbigent/settings.yml",
-        ".arbigent/settings.yaml"
-      )
-      
-      val existingConfigFiles = configFileNames.mapNotNull { fileName ->
-        val file = File(fileName)
-        if (file.exists()) file.absolutePath else null
-      }
+      val existingConfigFiles = existingCliSettingsFiles().map { it.absolutePath }
       
       if (existingConfigFiles.isNotEmpty()) {
         val valueSources = mutableListOf<ValueSource>()

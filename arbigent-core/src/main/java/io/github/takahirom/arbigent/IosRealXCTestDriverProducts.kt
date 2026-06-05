@@ -33,8 +33,11 @@ internal fun resolveRealIosDriverProducts(config: IosRealXCTestDeviceConfig): Fi
 
   val teamId = config.appleTeamId
     ?: throw IllegalStateException(
-      "A real iOS XCTest driver must be signed for this device. Set ${IosRealXCTestDeviceConfig.APPLE_TEAM_ID_ENV} " +
-        "or ${IosRealXCTestDeviceConfig.DRIVER_PRODUCTS_DIR_ENV}; the bundled Maven driver is only a fallback and may not install on real devices."
+      "A real iOS XCTest driver must be signed for this device. Set " +
+        "${IosRealXCTestDeviceConfig.APPLE_TEAM_ID_SETTING} in .arbigent/settings.local.yml, " +
+        "${IosRealXCTestDeviceConfig.APPLE_TEAM_ID_ENV}, DEVELOPMENT_TEAM, or " +
+        "${IosRealXCTestDeviceConfig.DRIVER_PRODUCTS_DIR_SETTING}. " +
+        "${IosCodeSigningTeamResolver.detectedTeamsMessage()}"
     )
 
   val productsPath = DriverBuilder().buildDriver(

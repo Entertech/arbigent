@@ -273,6 +273,19 @@ run:
   os: android
 ```
 
+**iOS real-device configuration:**
+```yaml
+# Use the same --os=ios entry point for booted simulators and paired real iPhones.
+os: ios
+
+# Optional when multiple paired iPhones are connected.
+ios-real-device-id: 00008101-001D29020E42001E
+
+# Optional when exactly one Apple Team ID can be auto-detected.
+# Required when multiple Apple code-signing teams are installed.
+ios-xctest-apple-team-id: B6Y9D6S4KK
+```
+
 **Simple flat configuration (still supported):**
 ```yaml
 ai-type: azureopenai

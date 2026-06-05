@@ -32,6 +32,17 @@ public data class IosRealXCTestDeviceConfig(
     public const val DRIVER_PRODUCTS_DIR_ENV: String = "ARBIGENT_IOS_XCTEST_DRIVER_PRODUCTS_DIR"
     public const val BUILD_DRIVER_ENV: String = "ARBIGENT_IOS_XCTEST_BUILD_DRIVER"
 
+    public const val DEVICE_ID_SETTING: String = "ios-real-device-id"
+    public const val HOST_SETTING: String = "ios-xctest-host"
+    public const val PORT_SETTING: String = "ios-xctest-port"
+    public const val AUTO_IPROXY_SETTING: String = "ios-xctest-auto-iproxy"
+    public const val PREBUILT_RUNNER_SETTING: String = "ios-xctest-prebuilt-runner"
+    public const val REINSTALL_DRIVER_SETTING: String = "ios-xctest-reinstall-driver"
+    public const val XCTESTRUN_SETTING: String = "ios-xctest-xctestrun"
+    public const val APPLE_TEAM_ID_SETTING: String = "ios-xctest-apple-team-id"
+    public const val DRIVER_PRODUCTS_DIR_SETTING: String = "ios-xctest-driver-products-dir"
+    public const val BUILD_DRIVER_SETTING: String = "ios-xctest-build-driver"
+
     private const val MAESTRO_DEVICE_ID_ENV = "MAESTRO_IOS_MIRROR_DEVICE_ID"
     private const val DEVELOPMENT_TEAM_ENV = "DEVELOPMENT_TEAM"
     private val mirrorOnlyBackends = setOf("mirror", "mirroir")
@@ -46,7 +57,7 @@ public data class IosRealXCTestDeviceConfig(
     }
 
     internal fun requestedDeviceIdFromEnvironment(): String? {
-      return System.getenv(DEVICE_ID_ENV)?.takeIf { it.isNotBlank() }
+      return settingOrEnv(DEVICE_ID_SETTING, DEVICE_ID_ENV)
         ?: System.getenv(MAESTRO_DEVICE_ID_ENV)?.takeIf { it.isNotBlank() }
     }
 
@@ -54,17 +65,23 @@ public data class IosRealXCTestDeviceConfig(
       return IosRealXCTestDeviceConfig(
         deviceId = device.udid,
         deviceName = device.name,
-        host = System.getenv(HOST_ENV)?.takeIf { it.isNotBlank() } ?: "127.0.0.1",
-        port = System.getenv(PORT_ENV)?.toIntOrNull() ?: 22087,
-        autoStartIproxy = System.getenv(AUTO_IPROXY_ENV)?.toBooleanStrictOrNull() ?: true,
-        preBuiltRunner = System.getenv(PREBUILT_RUNNER_ENV)?.toBooleanStrictOrNull() ?: false,
-        reinstallDriver = System.getenv(REINSTALL_DRIVER_ENV)?.toBooleanStrictOrNull() ?: false,
-        xctestrunFile = System.getenv(XCTESTRUN_ENV)?.takeIf { it.isNotBlank() },
-        appleTeamId = System.getenv(APPLE_TEAM_ID_ENV)?.takeIf { it.isNotBlank() }
-          ?: System.getenv(DEVELOPMENT_TEAM_ENV)?.takeIf { it.isNotBlank() },
-        driverProductsDir = System.getenv(DRIVER_PRODUCTS_DIR_ENV)?.takeIf { it.isNotBlank() },
-        buildDriver = System.getenv(BUILD_DRIVER_ENV)?.toBooleanStrictOrNull() ?: true,
+        host = settingOrEnv(HOST_SETTING, HOST_ENV) ?: "127.0.0.1",
+        port = settingOrEnv(PORT_SETTING, PORT_ENV)?.toIntOrNull() ?: 22087,
+        autoStartIproxy = settingOrEnv(AUTO_IPROXY_SETTING, AUTO_IPROXY_ENV)?.toBooleanStrictOrNull() ?: true,
+        preBuiltRunner = settingOrEnv(PREBUILT_RUNNER_SETTING, PREBUILT_RUNNER_ENV)?.toBooleanStrictOrNull() ?: false,
+        reinstallDriver = settingOrEnv(REINSTALL_DRIVER_SETTING, REINSTALL_DRIVER_ENV)?.toBooleanStrictOrNull() ?: false,
+        xctestrunFile = settingOrEnv(XCTESTRUN_SETTING, XCTESTRUN_ENV),
+        appleTeamId = settingOrEnv(APPLE_TEAM_ID_SETTING, APPLE_TEAM_ID_ENV)
+          ?: System.getenv(DEVELOPMENT_TEAM_ENV)?.takeIf { it.isNotBlank() }
+          ?: IosCodeSigningTeamResolver.autoDetectTeamId(),
+        driverProductsDir = settingOrEnv(DRIVER_PRODUCTS_DIR_SETTING, DRIVER_PRODUCTS_DIR_ENV),
+        buildDriver = settingOrEnv(BUILD_DRIVER_SETTING, BUILD_DRIVER_ENV)?.toBooleanStrictOrNull() ?: true,
       )
+    }
+
+    private fun settingOrEnv(settingKey: String, envKey: String): String? {
+      return ArbigentHostConfig.get(settingKey)
+        ?: System.getenv(envKey)?.takeIf { it.isNotBlank() }
     }
   }
 }

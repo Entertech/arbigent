@@ -7,6 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+@OptIn(ArbigentInternalApi::class)
 class IosRealXCTestDeviceTest {
   private val mapper = jacksonObjectMapper()
 
@@ -63,6 +64,53 @@ class IosRealXCTestDeviceTest {
     val device = IosRealDeviceCatalog.parseDevice(mapper.readTree(json))
 
     assertEquals(null, device)
+  }
+
+  @Test
+  fun `parseTeamIds extracts unique Apple Team IDs`() {
+    val output = """
+        1) CF5CB1CD7C2C87E64364885372866FA2DA362C41 "Apple Development: Example (C29C23WKU8)"
+        2) 02DA0804B5496F479BF5B4F7E3BCF296E675CC0D "Apple Distribution: Looktech Inc. (B6Y9D6S4KK)"
+        3) 5FD3E2C08922871A4CB0E984BD2A4950C9E31F43 "Apple Development: Example (C29C23WKU8)"
+           3 valid identities found
+    """.trimIndent()
+
+    assertEquals(
+      setOf("C29C23WKU8", "B6Y9D6S4KK"),
+      IosCodeSigningTeamResolver.parseTeamIds(output),
+    )
+  }
+
+  @Test
+  fun `fromEnvironment reads persisted host settings`() {
+    ArbigentHostConfig.replace(
+      mapOf(
+        IosRealXCTestDeviceConfig.HOST_SETTING to "localhost",
+        IosRealXCTestDeviceConfig.PORT_SETTING to "23000",
+        IosRealXCTestDeviceConfig.APPLE_TEAM_ID_SETTING to "B6Y9D6S4KK",
+        IosRealXCTestDeviceConfig.BUILD_DRIVER_SETTING to "false",
+      )
+    )
+    try {
+      val config = IosRealXCTestDeviceConfig.fromEnvironment(
+        IosRealDevice(
+          coreDeviceIdentifier = "COREDEVICE",
+          udid = "UDID",
+          name = "iPhone",
+          modelName = "iPhone",
+          pairingState = "paired",
+          tunnelState = "connected",
+          canConnect = true,
+        )
+      )
+
+      assertEquals("localhost", config.host)
+      assertEquals(23000, config.port)
+      assertEquals("B6Y9D6S4KK", config.appleTeamId)
+      assertFalse(config.buildDriver)
+    } finally {
+      ArbigentHostConfig.replace(emptyMap())
+    }
   }
 
   @Test

@@ -186,6 +186,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       return
     }
 
+    configureHostSettings(listOf("run"))
     device = connectDevice(os)
     Runtime.getRuntime().addShutdownHook(object : Thread() {
       override fun run() {

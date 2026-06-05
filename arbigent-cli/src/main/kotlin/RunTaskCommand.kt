@@ -62,6 +62,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
 
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
     val ai = createAi(aiType, aiApiLoggingEnabled, workingDirectory)
+    configureHostSettings(listOf("run.task", "task", "run"))
     val device = connectDevice(os)
 
     try {

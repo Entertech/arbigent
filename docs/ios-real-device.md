@@ -9,19 +9,42 @@ Use `--os=ios` for both iOS Simulator and real iPhone targets. Arbigent discover
 If exactly one paired real iPhone is connected, no real/simulator switch is required:
 
 ```bash
-export ARBIGENT_IOS_XCTEST_APPLE_TEAM_ID=B6Y9D6S4KK
-
 arbigent run task --os=ios "Your task"
 ```
 
-`ARBIGENT_IOS_REAL_DEVICE_ID` is optional and only needed when multiple paired real iPhones are connected or when the CLI must target a specific iPhone. It accepts the physical hardware UDID. The discovery code also accepts the CoreDevice identifier when selecting a paired device from `devicectl`, but XCTest and `iproxy` are run with the hardware UDID.
+`ios-real-device-id` or `ARBIGENT_IOS_REAL_DEVICE_ID` is optional and only needed when multiple paired real iPhones are connected or when the CLI must target a specific iPhone. It accepts the physical hardware UDID. The discovery code also accepts the CoreDevice identifier when selecting a paired device from `devicectl`, but XCTest and `iproxy` are run with the hardware UDID.
 
-`ARBIGENT_IOS_XCTEST_XCTESTRUN` is optional. If it is unset, Arbigent uses the `LocalXCTestInstaller` bundled by its Maestro dependency. Real-device XCTest runners must be signed for the target device, so Arbigent first looks for a valid local driver at `~/.maestro/maestro-iphoneos-driver-build/driver-iphoneos/Build/Products`. If it is missing, Arbigent builds one from the `ai.looktech:maestro-cli:2.6.0-looktech.2` bundled driver source using `ARBIGENT_IOS_XCTEST_APPLE_TEAM_ID` or `DEVELOPMENT_TEAM`.
+`ios-xctest-xctestrun` is optional. If it is unset, Arbigent uses the `LocalXCTestInstaller` bundled by its Maestro dependency. Real-device XCTest runners must be signed for the target device, so Arbigent first looks for a valid local driver at `~/.maestro/maestro-iphoneos-driver-build/driver-iphoneos/Build/Products`. If it is missing, Arbigent builds one from the `ai.looktech:maestro-cli:2.6.0-looktech.2` bundled driver source.
+
+Arbigent resolves the Apple Team ID in this order:
+
+1. `.arbigent/settings.local.yml` key `ios-xctest-apple-team-id`
+2. `ARBIGENT_IOS_XCTEST_APPLE_TEAM_ID`
+3. `DEVELOPMENT_TEAM`
+4. Auto-detection from `security find-identity -v -p codesigning`, only when exactly one team is available
+
+When multiple Apple teams are installed, Arbigent does not guess. Persist the intended team in `.arbigent/settings.local.yml`:
+
+```yaml
+os: ios
+ios-xctest-apple-team-id: B6Y9D6S4KK
+# Optional when multiple paired real iPhones are connected:
+ios-real-device-id: 00008101-001D29020E42001E
+```
+
+Command-specific settings are also supported:
+
+```yaml
+run:
+  os: ios
+  ios-xctest-apple-team-id: B6Y9D6S4KK
+```
 
 Useful overrides:
 
-- `ARBIGENT_IOS_XCTEST_DRIVER_PRODUCTS_DIR`: explicit `Build/Products` directory containing an `.xctestrun`.
-- `ARBIGENT_IOS_XCTEST_BUILD_DRIVER=false`: disable automatic local driver build and use the Maven-bundled `driver-iphoneos` fallback. This fallback can fail on real devices if its embedded provisioning profile does not include the phone.
+- `ios-xctest-driver-products-dir`: explicit `Build/Products` directory containing an `.xctestrun`.
+- `ios-xctest-build-driver: false`: disable automatic local driver build and use the Maven-bundled `driver-iphoneos` fallback. This fallback can fail on real devices if its embedded provisioning profile does not include the phone.
+- `ios-xctest-host`, `ios-xctest-port`, `ios-xctest-auto-iproxy`, `ios-xctest-prebuilt-runner`, `ios-xctest-reinstall-driver`, and `ios-xctest-xctestrun`: lower-level XCTest connection and runner overrides.
 
 Runtime notes:
 
@@ -43,12 +66,10 @@ MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
 ./gradlew :arbigent-core:test --tests io.github.takahirom.arbigent.IosRealXCTestDeviceTest.real\ device\ XCTest\ smoke
 ```
 
-Apple Music real-device smoke verified on iPhone 12 mini:
+Apple Music real-device smoke verified on iPhone 12 mini, assuming `.arbigent/settings.local.yml` contains `ios-xctest-apple-team-id` and `ios-real-device-id` when needed:
 
 ```bash
 JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home \
-ARBIGENT_IOS_REAL_DEVICE_ID=00008101-001D29020E42001E \
-ARBIGENT_IOS_XCTEST_APPLE_TEAM_ID=B6Y9D6S4KK \
 MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
 arbigent-cli/build/install/arbigent/bin/arbigent run task \
   --os=ios \
