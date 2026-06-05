@@ -1,17 +1,23 @@
 package io.github.takahirom.arbigent
 
 import dadb.Dadb
+import device.SimctlIOSDevice
 import ios.LocalIOSDevice
-import ios.simctl.SimctlIOSDevice
+import ios.devicectl.DeviceControlIOSDevice
 import ios.xctest.XCTestIOSDevice
 import maestro.Maestro
 import maestro.drivers.AndroidDriver
 import maestro.drivers.IOSDriver
+import maestro.utils.NoopInsights
+import maestro.utils.TempFileHandler
+import util.IOSDeviceType
 import util.SimctlList
 import util.XCRunnerCLIUtils
 import xcuitest.XCTestClient
 import xcuitest.XCTestDriverClient
+import xcuitest.installer.Context
 import xcuitest.installer.LocalXCTestInstaller
+import xcuitest.installer.LocalXCTestInstaller.IOSDriverConfig
 import xcuitest.installer.XCTestInstaller
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -64,23 +70,40 @@ public sealed interface ArbigentAvailableDevice {
     override fun connectToDevice(): ArbigentDevice {
       val port = port
       val host = host
+      val tempFileHandler = TempFileHandler()
+      val deviceController = SimctlIOSDevice(
+        deviceId = device.udid,
+        tempFileHandler = tempFileHandler,
+      )
 
       val xcTestInstaller = LocalXCTestInstaller(
         deviceId = device.udid, // Use the device's UDID
         host = host,
+        deviceType = IOSDeviceType.SIMULATOR,
         defaultPort = port,
-        enableXCTestOutputFileLogging = true,
+        reinstallDriver = true,
+        iOSDriverConfig = IOSDriverConfig(
+          prebuiltRunner = false,
+          sourceDirectory = "driver-iPhoneSimulator",
+          context = Context.CLI,
+          snapshotKeyHonorModalViews = null,
+        ),
+        deviceController = deviceController,
+        tempFileHandler = tempFileHandler,
+        logsDir = xctestLogsDir(),
       )
 
       val xcTestDriverClient = XCTestDriverClient(
         installer = xcTestInstaller,
         client = XCTestClient(host, port), // Use the same host and port as above
+        reinstallDriver = true,
       )
+      val xcRunnerCLIUtils = XCRunnerCLIUtils(tempFileHandler)
 
       val xcTestDevice = XCTestIOSDevice(
         deviceId = device.udid,
         client = xcTestDriverClient,
-        getInstalledApps = { XCRunnerCLIUtils.listApps(device.udid) },
+        getInstalledApps = { xcRunnerCLIUtils.listApps(device.udid) },
       )
 
       return MaestroDevice(
@@ -89,8 +112,10 @@ public sealed interface ArbigentAvailableDevice {
             LocalIOSDevice(
               deviceId = device.udid,
               xcTestDevice = xcTestDevice,
-              simctlIOSDevice = SimctlIOSDevice(device.udid)
-            )
+              deviceController = deviceController,
+              insights = NoopInsights,
+            ),
+            insights = NoopInsights,
           )
         ),
         availableDevice = this
@@ -129,34 +154,58 @@ public sealed interface ArbigentAvailableDevice {
           host = config.host,
           port = config.port,
           xctestrunFile = File(xctestrunFile),
-          enableXCTestOutputFileLogging = true,
           reinstallDriver = config.reinstallDriver,
         )
-      } ?: LocalXCTestInstaller(
-        deviceId = config.deviceId,
-        host = config.host,
-        defaultPort = config.port,
-        enableXCTestOutputFileLogging = true,
-        preBuiltRunner = config.preBuiltRunner,
-        reinstallDriver = config.reinstallDriver,
-      )
+      } ?: run {
+        val tempFileHandler = TempFileHandler()
+        val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
+        val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
+        val driverProductsDir = resolveRealIosDriverProducts(config)
+        LocalXCTestInstaller(
+          deviceId = config.deviceId,
+          host = config.host,
+          deviceType = IOSDeviceType.REAL,
+          defaultPort = config.port,
+          reinstallDriver = config.reinstallDriver,
+          iOSDriverConfig = IOSDriverConfig(
+            prebuiltRunner = config.preBuiltRunner,
+            sourceDirectory = driverProductsDir.absolutePath,
+            context = Context.CLI,
+            snapshotKeyHonorModalViews = null,
+          ),
+          deviceController = deviceController,
+          tempFileHandler = tempFileHandler,
+          logsDir = xctestLogsDir(),
+        )
+      }
       try {
+        val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
+        val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
         val xcTestDriverClient = XCTestDriverClient(
           installer = xcTestInstaller,
           client = XCTestClient(config.host, config.port),
+          reinstallDriver = config.reinstallDriver,
         )
         val xcTestDevice = XCTestIOSDevice(
           deviceId = config.deviceId,
           client = xcTestDriverClient,
           getInstalledApps = { IosRealDeviceCatalog.installedBundleIds(config.deviceId) },
         )
-        val maestroDevice = MaestroDevice(
+        return MaestroDevice(
           Maestro.ios(
-            IOSDriver(xcTestDevice)
+            IOSDriver(
+              LocalIOSDevice(
+                deviceId = config.deviceId,
+                xcTestDevice = xcTestDevice,
+                deviceController = deviceController,
+                insights = NoopInsights,
+              ),
+              insights = NoopInsights,
+            )
           ),
-          availableDevice = this
+          availableDevice = this,
+          closeHook = { portForwarder?.close() },
         )
-        return IosRealXCTestArbigentDevice(maestroDevice, portForwarder)
       } catch (throwable: Throwable) {
         runCatching { xcTestInstaller.close() }
         portForwarder?.close()
@@ -170,7 +219,7 @@ public sealed interface ArbigentAvailableDevice {
     override val name: String = "Chrome"
     public override fun connectToDevice(): ArbigentDevice {
       return MaestroDevice(
-        Maestro.web(false, false),
+        Maestro.web(false, false, null),
         availableDevice = this
       )
     }
@@ -188,14 +237,8 @@ public sealed interface ArbigentAvailableDevice {
   public fun connectToDevice(): ArbigentDevice
 }
 
-internal class IosRealXCTestArbigentDevice(
-  private val delegate: ArbigentDevice,
-  private val portForwarder: IosRealXCTestPortForwarder?,
-) : ArbigentDevice by delegate {
-  override fun close() {
-    runCatching { delegate.close() }
-    portForwarder?.close()
-  }
+internal fun xctestLogsDir(): File {
+  return File(ArbigentFiles.parentDir, "maestro-xctest-logs").also { it.mkdirs() }
 }
 
 internal class IosRealXCTestPortForwarder(

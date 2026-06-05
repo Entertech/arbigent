@@ -31,6 +31,7 @@ buildConfig {
 dependencies {
   implementation(project(":arbigent-core-web-report"))
   api(libs.maestro.orchestra)
+  implementation(libs.maestro.cli)
   api(libs.maestro.client)
   implementation("dev.mobile:dadb:1.2.9")
   api(libs.maestro.ios)

@@ -189,7 +189,8 @@ $mcpDescriptions
 Return exactly one JSON object matching the provided schema.
 Choose one action from AVAILABLE_ACTIONS, or one mcp_<toolName> from AVAILABLE_MCP_TOOLS.
 For ordinary Arbigent actions, put the primary argument in "text". Use an empty string when the action has no argument.
-For MCP actions, put tool arguments in "arguments" and keep "text" empty.
+Set "arguments" to "{}" unless selecting an MCP action.
+For MCP actions, put tool arguments in "arguments" as a compact JSON object string and keep "text" empty.
 Use ClickWithIndex when a visible target exists in ELEMENTS.
 Use ClickAtCoordinates only when the target is visible in the screenshot but missing from ELEMENTS/UI hierarchy.
 Do not call tools, inspect the local repository, edit files, or ask follow-up questions.
@@ -224,9 +225,8 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
           put("description", "Primary action argument, or empty string for no-argument and MCP actions.")
         }
         putJsonObject("arguments") {
-          put("type", "object")
-          put("description", "MCP tool arguments or optional provider-specific structured arguments.")
-          put("additionalProperties", true)
+          put("type", "string")
+          put("description", "Compact JSON object string for MCP tool arguments, or \"{}\" for ordinary Arbigent actions.")
         }
         putJsonObject(ArbigentAiAnswerItems.Memo.key) {
           put("type", "string")

@@ -1,5 +1,6 @@
 package io.github.takahirom.arbigent
 
+import maestro.utils.TempFileHandler
 import util.XCRunnerCLIUtils
 import xcuitest.XCTestClient
 import xcuitest.installer.XCTestInstaller
@@ -13,12 +14,11 @@ internal class ArbigentExternalXCTestInstaller(
   private val host: String,
   private val port: Int,
   private val xctestrunFile: File,
-  private val enableXCTestOutputFileLogging: Boolean,
   private val reinstallDriver: Boolean,
 ) : XCTestInstaller {
+  private val tempFileHandler = TempFileHandler()
+  private val xcRunnerCLIUtils = XCRunnerCLIUtils(tempFileHandler)
   private var process: Process? = null
-
-  override val preBuiltRunner: Boolean = true
 
   override fun start(): XCTestClient {
     require(xctestrunFile.isFile) {
@@ -29,11 +29,12 @@ internal class ArbigentExternalXCTestInstaller(
     }
 
     process?.destroy()
-    process = XCRunnerCLIUtils.runXcTestWithoutBuild(
-      deviceId,
-      xctestrunFile.absolutePath,
-      port,
-      enableXCTestOutputFileLogging,
+    process = xcRunnerCLIUtils.runXcTestWithoutBuild(
+      deviceId = deviceId,
+      xcTestRunFilePath = xctestrunFile.absolutePath,
+      port = port,
+      snapshotKeyHonorModalViews = null,
+      logsDir = xctestLogsDir(),
     )
 
     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(startupTimeoutSeconds())
@@ -62,8 +63,8 @@ internal class ArbigentExternalXCTestInstaller(
 
   override fun uninstall(): Boolean {
     return runCatching {
-      XCRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-iosUITests.xctrunner", deviceId)
-      XCRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-ios", deviceId)
+      xcRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-iosUITests.xctrunner", deviceId)
+      xcRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-ios", deviceId)
       true
     }.getOrDefault(false)
   }
@@ -87,6 +88,7 @@ internal class ArbigentExternalXCTestInstaller(
     if (reinstallDriver) {
       uninstall()
     }
+    tempFileHandler.close()
   }
 
   private fun startupTimeoutSeconds(): Long {

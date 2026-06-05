@@ -1,10 +1,17 @@
 package io.github.takahirom.arbigent
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 internal object AgentActionJsonParser {
+  private val json = Json {
+    ignoreUnknownKeys = true
+  }
+
   fun parseAgentAction(
     agentActionList: List<AgentActionType>,
     action: String,
@@ -136,11 +143,23 @@ internal object AgentActionJsonParser {
   }
 
   fun normalizeArguments(responseJsonObject: JsonObject): JsonObject {
-    val nestedArguments = responseJsonObject["arguments"]?.jsonObject
+    val nestedArguments = responseJsonObject["arguments"]?.toJsonObjectOrNull()
     return if (nestedArguments == null) {
       responseJsonObject
     } else {
       JsonObject(responseJsonObject + nestedArguments)
+    }
+  }
+
+  private fun JsonElement.toJsonObjectOrNull(): JsonObject? {
+    if (this is JsonObject) return this
+    if (this !is JsonPrimitive) return null
+    val content = content.trim()
+    if (content.isBlank() || content == "{}") return null
+    return try {
+      json.parseToJsonElement(content).jsonObject
+    } catch (e: Exception) {
+      throw IllegalArgumentException("arguments must be a JSON object or JSON object string: ${e.message}", e)
     }
   }
 

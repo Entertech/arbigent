@@ -44,6 +44,28 @@ class AgentActionJsonParserTest {
   }
 
   @Test
+  fun `parses indexed action from normalized string arguments`() {
+    val arguments = AgentActionJsonParser.normalizeArguments(
+      JsonObject(
+        mapOf(
+          "text" to JsonPrimitive(""),
+          "arguments" to JsonPrimitive("{\"text\":\"1\"}"),
+        )
+      )
+    )
+
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = listOf(ClickWithIndex),
+      action = "ClickWithIndex",
+      argumentsJsonData = arguments,
+      elements = elementList(size = 2),
+      mcpTools = null,
+    )
+
+    assertEquals(ClickWithIndex(index = 1), action)
+  }
+
+  @Test
   fun `parses goal action without text argument`() {
     val action = AgentActionJsonParser.parseAgentAction(
       agentActionList = listOf(GoalAchievedAgentAction),

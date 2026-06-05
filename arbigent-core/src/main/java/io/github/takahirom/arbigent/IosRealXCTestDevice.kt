@@ -15,6 +15,9 @@ public data class IosRealXCTestDeviceConfig(
   public val preBuiltRunner: Boolean,
   public val reinstallDriver: Boolean,
   public val xctestrunFile: String?,
+  public val appleTeamId: String?,
+  public val driverProductsDir: String?,
+  public val buildDriver: Boolean,
 ) {
   public companion object {
     public const val DEVICE_KIND_ENV: String = "ARBIGENT_IOS_DEVICE_KIND"
@@ -26,13 +29,18 @@ public data class IosRealXCTestDeviceConfig(
     public const val PREBUILT_RUNNER_ENV: String = "ARBIGENT_IOS_XCTEST_PREBUILT_RUNNER"
     public const val REINSTALL_DRIVER_ENV: String = "ARBIGENT_IOS_XCTEST_REINSTALL_DRIVER"
     public const val XCTESTRUN_ENV: String = "ARBIGENT_IOS_XCTEST_XCTESTRUN"
+    public const val APPLE_TEAM_ID_ENV: String = "ARBIGENT_IOS_XCTEST_APPLE_TEAM_ID"
+    public const val DRIVER_PRODUCTS_DIR_ENV: String = "ARBIGENT_IOS_XCTEST_DRIVER_PRODUCTS_DIR"
+    public const val BUILD_DRIVER_ENV: String = "ARBIGENT_IOS_XCTEST_BUILD_DRIVER"
 
     private const val MAESTRO_DEVICE_ID_ENV = "MAESTRO_IOS_MIRROR_DEVICE_ID"
+    private const val DEVELOPMENT_TEAM_ENV = "DEVELOPMENT_TEAM"
+    private val mirrorOnlyBackends = setOf("mirror", "mirroir")
 
     public fun isEnabled(): Boolean {
       val kind = System.getenv(DEVICE_KIND_ENV)?.lowercase()
       val backend = System.getenv(BACKEND_ENV)?.lowercase()
-      return kind == "real" && backend !in setOf("mirror", "mirroir")
+      return kind == "real" && backend !in mirrorOnlyBackends
     }
 
     public fun fromEnvironment(): IosRealXCTestDeviceConfig {
@@ -48,6 +56,10 @@ public data class IosRealXCTestDeviceConfig(
         preBuiltRunner = System.getenv(PREBUILT_RUNNER_ENV)?.toBooleanStrictOrNull() ?: false,
         reinstallDriver = System.getenv(REINSTALL_DRIVER_ENV)?.toBooleanStrictOrNull() ?: false,
         xctestrunFile = System.getenv(XCTESTRUN_ENV)?.takeIf { it.isNotBlank() },
+        appleTeamId = System.getenv(APPLE_TEAM_ID_ENV)?.takeIf { it.isNotBlank() }
+          ?: System.getenv(DEVELOPMENT_TEAM_ENV)?.takeIf { it.isNotBlank() },
+        driverProductsDir = System.getenv(DRIVER_PRODUCTS_DIR_ENV)?.takeIf { it.isNotBlank() },
+        buildDriver = System.getenv(BUILD_DRIVER_ENV)?.toBooleanStrictOrNull() ?: true,
       )
     }
   }

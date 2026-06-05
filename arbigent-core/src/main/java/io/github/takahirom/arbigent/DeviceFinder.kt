@@ -1,6 +1,7 @@
 package io.github.takahirom.arbigent
 
 import dadb.Dadb
+import maestro.utils.TempFileHandler
 import util.LocalSimulatorUtils
 
 @ArbigentInternalApi
@@ -16,7 +17,7 @@ public fun fetchAvailableDevicesByOs(deviceType: ArbigentDeviceOs): List<Arbigen
       } else if (IosRealXCTestDeviceConfig.isEnabled()) {
         listOf(ArbigentAvailableDevice.IOSRealXCTest(IosRealXCTestDeviceConfig.fromEnvironment()))
       } else {
-        LocalSimulatorUtils.list()
+        LocalSimulatorUtils(TempFileHandler()).list()
           .devices
           .flatMap { runtime ->
             runtime.value

@@ -24,15 +24,20 @@ class CodexCliAiTest {
         """
 #!/bin/sh
 out=""
+schema=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output-last-message" ]; then
     shift
     out="$1"
+  elif [ "$1" = "--output-schema" ]; then
+    shift
+    schema="$1"
   fi
   shift
 done
+grep -q '"arguments":{"type":"string"' "${'$'}schema" || exit 7
 cat >/dev/null
-printf '%s' '{"action":"ClickAtCoordinates","text":"12,34","arguments":{},"arbigent-memo":"tap visible target","arbigent-image-description":"test screen"}' > "${'$'}out"
+printf '%s' '{"action":"ClickAtCoordinates","text":"12,34","arguments":"{}","arbigent-memo":"tap visible target","arbigent-image-description":"test screen"}' > "${'$'}out"
 exit 0
         """.trimIndent()
       )
