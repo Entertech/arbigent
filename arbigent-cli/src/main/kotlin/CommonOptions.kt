@@ -53,6 +53,11 @@ fun validateAiConfig(aiType: AiConfig) {
         throw CliktError("Missing Azure OpenAI API key. Please provide via --azure-openai-api-key, AZURE_OPENAI_API_KEY environment variable, or in .arbigent/settings.local.yml")
       }
     }
+    is CodexAiConfig -> {
+      if (aiType.codexCommand.isBlank()) {
+        throw CliktError("Missing Codex command. Please provide via --codex-command or ARBIGENT_CODEX_COMMAND.")
+      }
+    }
   }
 }
 
@@ -81,16 +86,32 @@ fun setupArbigentFiles(workingDirectory: String?, logFile: String): ArbigentResu
   return ArbigentResultDirs(resultDir, resultFile)
 }
 
-fun createAi(aiType: AiConfig, aiApiLoggingEnabled: Boolean): ArbigentAi {
+fun createAi(
+  aiType: AiConfig,
+  aiApiLoggingEnabled: Boolean,
+  workingDirectory: String? = null,
+): ArbigentAi {
+  return createAiProvider(aiType, aiApiLoggingEnabled, workingDirectory).createAi()
+}
+
+fun createAiProvider(
+  aiType: AiConfig,
+  aiApiLoggingEnabled: Boolean,
+  workingDirectory: String? = null,
+): ArbigentAiProvider {
   return when (aiType) {
-    is OpenAIAiConfig -> OpenAIAi(
+    is OpenAIAiConfig -> OpenAICompatibleAiProvider(
+      providerId = "openai",
+      providerLabel = "OpenAI",
       apiKey = aiType.openAiApiKey!!,
       baseUrl = aiType.openAiEndpoint,
       modelName = aiType.openAiModelName,
       loggingEnabled = aiApiLoggingEnabled,
     )
 
-    is GeminiAiConfig -> OpenAIAi(
+    is GeminiAiConfig -> OpenAICompatibleAiProvider(
+      providerId = "gemini",
+      providerLabel = "Gemini",
       apiKey = aiType.geminiApiKey!!,
       baseUrl = aiType.geminiEndpoint,
       modelName = aiType.geminiModelName,
@@ -98,7 +119,9 @@ fun createAi(aiType: AiConfig, aiApiLoggingEnabled: Boolean): ArbigentAi {
       jsonSchemaType = ArbigentAi.JsonSchemaType.GeminiOpenAICompatible
     )
 
-    is AzureOpenAiConfig -> OpenAIAi(
+    is AzureOpenAiConfig -> OpenAICompatibleAiProvider(
+      providerId = "azureopenai",
+      providerLabel = "Azure OpenAI",
       apiKey = aiType.azureOpenAIKey!!,
       baseUrl = aiType.azureOpenAIEndpoint!!,
       modelName = aiType.azureOpenAIModelName,
@@ -107,6 +130,16 @@ fun createAi(aiType: AiConfig, aiApiLoggingEnabled: Boolean): ArbigentAi {
         parameter("api-version", aiType.azureOpenAIApiVersion)
         header("api-key", aiType.azureOpenAIKey!!)
       }
+    )
+
+    is CodexAiConfig -> CodexCliAiProvider(
+      codexExecutable = aiType.codexCommand,
+      modelName = aiType.codexModelName,
+      profile = aiType.codexProfile,
+      sandbox = aiType.codexSandbox,
+      approvalPolicy = aiType.codexApprovalPolicy,
+      timeoutMs = aiType.codexTimeoutMs,
+      workingDirectory = workingDirectory,
     )
   }
 }

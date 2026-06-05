@@ -170,7 +170,19 @@ scenarios:
     assertContains(test.output, "--max-step")
     assertContains(test.output, "--max-retry")
     assertContains(test.output, "--ai-type")
+    assertContains(test.output, "codex")
     assertContains(test.output, "--os")
+  }
+
+  @Test
+  fun `run dry-run with codex ai type does not require provider api key`() {
+    val command = ArbigentCli().subcommands(ArbigentRunCommand().subcommands(ArbigentRunTaskCommand()))
+    val projectFileOption = "--project-file=${yaml.absolutePath}"
+
+    val test = command.test("run $projectFileOption --dry-run --ai-type=codex")
+
+    assertContains(test.output, "Selected scenarios for execution")
+    assertContains(test.output, "Dry run mode is enabled")
   }
 
   @Test

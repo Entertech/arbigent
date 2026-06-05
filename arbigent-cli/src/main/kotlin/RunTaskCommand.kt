@@ -38,7 +38,8 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     .groupChoice(
       "openai" to OpenAIAiConfig(),
       "gemini" to GeminiAiConfig(),
-      "azureopenai" to AzureOpenAiConfig()
+      "azureopenai" to AzureOpenAiConfig(),
+      "codex" to CodexAiConfig(),
     )
     .defaultByName("openai")
 
@@ -60,7 +61,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     applyLogLevel(logLevel)
 
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
-    val ai = createAi(aiType, aiApiLoggingEnabled)
+    val ai = createAi(aiType, aiApiLoggingEnabled, workingDirectory)
     val device = connectDevice(os)
 
     try {

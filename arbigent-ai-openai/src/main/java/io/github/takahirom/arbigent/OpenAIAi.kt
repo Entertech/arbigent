@@ -41,7 +41,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
 
 public class ArbigentAiRateLimitExceededException : Exception("Rate limit exceeded")
 
-private enum class ArbigentAiAnswerItems(
+internal enum class ArbigentAiAnswerItems(
   val key: String,
   val type: String,
   val description: String,
@@ -438,130 +438,13 @@ public class OpenAIAi @OptIn(ArbigentInternalApi::class) constructor(
     elements: ArbigentElementList,
     mcpTools: List<MCPTool>?
   ): ArbigentAgentAction {
-    if (action.startsWith("mcp_")) {
-      val mcpAction = action.removePrefix("mcp_")
-      val mcpTool = mcpTools?.firstOrNull { it.name == mcpAction }
-        ?: throw IllegalArgumentException("Unknown MCP action: $action. Available actions: ${mcpTools?.joinToString { it.name }}")
-      return ExecuteMcpToolAgentAction(
-        tool = mcpTool,
-        executeToolArgs = ExecuteToolArgs(
-          arguments = argumentsJsonData.let {
-            // Remove arbigent parameters
-            JsonObject(it.filterKeys { key ->
-              !ArbigentAiAnswerItems.entries.map { it.key }.contains(key)
-            }.toMap())
-          },
-        )
-      )
-    }
-    val agentActionMap = agentActionList.associateBy { it.actionName }
-    val actionPrototype = agentActionMap[action]
-      ?: throw IllegalArgumentException("Unknown action: $action. Available actions: ${agentActionMap.keys.joinToString()}")
-    val agentAction: ArbigentAgentAction = when (actionPrototype) {
-      GoalAchievedAgentAction -> GoalAchievedAgentAction()
-      FailedAgentAction -> FailedAgentAction()
-      ClickWithTextAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        ClickWithTextAgentAction(text)
-      }
-
-      ClickWithIdAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        ClickWithIdAgentAction(text)
-      }
-
-      DpadUpArrowAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadUpArrowAgentAction(text.toIntOrNull() ?: 1)
-      }
-
-      DpadDownArrowAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadDownArrowAgentAction(text.toIntOrNull() ?: 1)
-      }
-
-      DpadLeftArrowAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadLeftArrowAgentAction(text.toIntOrNull() ?: 1)
-      }
-
-      DpadRightArrowAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadRightArrowAgentAction(text.toIntOrNull() ?: 1)
-      }
-
-      DpadCenterAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadCenterAgentAction(text.toIntOrNull() ?: 1)
-      }
-
-      DpadAutoFocusWithIdAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadAutoFocusWithIdAgentAction(text)
-      }
-
-      DpadAutoFocusWithTextAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        DpadAutoFocusWithTextAgentAction(text)
-      }
-
-      DpadAutoFocusWithIndexAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        val index = text.toIntOrNull()
-          ?: throw IllegalArgumentException("text should be a number for ${DpadAutoFocusWithIndexAgentAction.actionName}")
-        if (elements.elements.size <= index) {
-          throw IllegalArgumentException("Index out of bounds: $index")
-        }
-        DpadAutoFocusWithIndexAgentAction(index)
-      }
-
-      InputTextAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        InputTextAgentAction(text)
-      }
-
-      ClickWithIndex -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        val index = text.toIntOrNull()
-          ?: throw IllegalArgumentException("text should be a number for ${ClickWithIndex.actionName}")
-        if (elements.elements.size <= index) {
-          throw IllegalArgumentException("Index out of bounds: $index")
-        }
-        ClickWithIndex(
-          index = index,
-        )
-      }
-
-      ClickAtCoordinates -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        val parts = text.split(",").map { it.trim() }
-        if (parts.size != 2) {
-          throw IllegalArgumentException("text should be \"x,y\" for ${ClickAtCoordinates.actionName}, got: \"$text\"")
-        }
-        val x = parts[0].toIntOrNull()
-          ?: throw IllegalArgumentException("x is not an integer for ${ClickAtCoordinates.actionName}: \"${parts[0]}\"")
-        val y = parts[1].toIntOrNull()
-          ?: throw IllegalArgumentException("y is not an integer for ${ClickAtCoordinates.actionName}: \"${parts[1]}\"")
-        ClickAtCoordinates(x = x, y = y)
-      }
-
-      BackPressAgentAction -> BackPressAgentAction()
-
-      KeyPressAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        KeyPressAgentAction(text)
-      }
-
-      WaitAgentAction -> {
-        val text = argumentsJsonData["text"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("Text not found")
-        WaitAgentAction(text.toIntOrNull() ?: 1000)
-      }
-
-      ScrollAgentAction -> ScrollAgentAction()
-
-      else -> throw IllegalArgumentException("Unsupported action: $action")
-    }
-    return agentAction
+    return AgentActionJsonParser.parseAgentAction(
+      agentActionList = agentActionList,
+      action = action,
+      argumentsJsonData = argumentsJsonData,
+      elements = elements,
+      mcpTools = mcpTools,
+    )
   }
 
 

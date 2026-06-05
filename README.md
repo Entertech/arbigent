@@ -315,8 +315,16 @@ Options for Azure OpenAI:
   --azure-openai-model-name=<text>       Model name (default: gpt-4.1)  
   --azure-openai-api-key, --azure-openai-key=<text> API key
 
+Options for Codex CLI AI:
+  --codex-command=<text>                 Codex executable path or command name
+  --codex-model-name=<text>              Codex model name
+  --codex-profile=<text>                 Codex config profile
+  --codex-sandbox=<text>                 Codex sandbox mode
+  --codex-approval-policy=<text>         Codex approval policy
+  --codex-timeout-ms=<value>             Codex decision timeout
+
 Options:
-  --ai-type=(openai|gemini|azureopenai)  Type of AI to use
+  --ai-type=(openai|gemini|azureopenai|codex)  Type of AI to use
   --ai-api-logging                       Enable AI API debug logging
   --os=(android|ios|web)                 Target operating system
   --project-file=<text>                  Path to the project YAML file
@@ -415,8 +423,10 @@ https://github.com/takahirom/arbigent-sample
 | OpenAI      | Yes       |
 | Gemini      | Yes       |
 | OpenAI based APIs like Ollama | Yes |
+| Azure OpenAI | Yes      |
+| Codex CLI   | Yes, for agent decisions |
 
-You can add AI providers by implementing the `ArbigentAi` interface.
+You can add AI providers by implementing the `ArbigentAiProvider` boundary and returning an `ArbigentAi` runtime. See `docs/ai-providers.md`.
 
 ## Supported OSes / Form Factors
 

@@ -43,7 +43,8 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     .groupChoice(
       "openai" to OpenAIAiConfig(),
       "gemini" to GeminiAiConfig(),
-      "azureopenai" to AzureOpenAiConfig()
+      "azureopenai" to AzureOpenAiConfig(),
+      "codex" to CodexAiConfig(),
     )
     .defaultByName("openai")
 
@@ -130,13 +131,16 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       is OpenAIAiConfig -> "openai"
       is GeminiAiConfig -> "gemini"
       is AzureOpenAiConfig -> "azureopenai"
+      is CodexAiConfig -> "codex"
       else -> "unknown"
     }}")
     arbigentDebugLog("  log-level: $logLevel")
     arbigentDebugLog("==========================================")
     
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
-    val ai = createAi(aiType, aiApiLoggingEnabled)
+    val aiProvider = createAiProvider(aiType, aiApiLoggingEnabled, workingDirectory)
+    arbigentDebugLog("  ai-provider-runtime: ${aiProvider.metadata.runtime}")
+    val ai = aiProvider.createAi()
 
     var device: ArbigentDevice? = null
     val appSettings = CliAppSettings(
