@@ -80,6 +80,10 @@ class IosRealXCTestDeviceTest {
       preBuiltRunner = System.getenv(IosRealXCTestDeviceConfig.PREBUILT_RUNNER_ENV)?.toBooleanStrictOrNull() ?: false,
       reinstallDriver = System.getenv(IosRealXCTestDeviceConfig.REINSTALL_DRIVER_ENV)?.toBooleanStrictOrNull() ?: false,
       xctestrunFile = System.getenv(IosRealXCTestDeviceConfig.XCTESTRUN_ENV)?.takeIf { it.isNotBlank() },
+      appleTeamId = System.getenv(IosRealXCTestDeviceConfig.APPLE_TEAM_ID_ENV)?.takeIf { it.isNotBlank() }
+        ?: System.getenv("DEVELOPMENT_TEAM")?.takeIf { it.isNotBlank() },
+      driverProductsDir = System.getenv(IosRealXCTestDeviceConfig.DRIVER_PRODUCTS_DIR_ENV)?.takeIf { it.isNotBlank() },
+      buildDriver = System.getenv(IosRealXCTestDeviceConfig.BUILD_DRIVER_ENV)?.toBooleanStrictOrNull() ?: true,
     )
 
     val device = ArbigentAvailableDevice.IOSRealXCTest(config).connectToDevice()

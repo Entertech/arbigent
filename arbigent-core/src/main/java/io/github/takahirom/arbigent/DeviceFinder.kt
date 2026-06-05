@@ -14,16 +14,8 @@ public fun fetchAvailableDevicesByOs(deviceType: ArbigentDeviceOs): List<Arbigen
     ArbigentDeviceOs.Ios -> {
       if (IosRealMirrorDeviceConfig.isEnabled()) {
         listOf(ArbigentAvailableDevice.IOSRealMirror(IosRealMirrorDeviceConfig.fromEnvironment()))
-      } else if (IosRealXCTestDeviceConfig.isEnabled()) {
-        listOf(ArbigentAvailableDevice.IOSRealXCTest(IosRealXCTestDeviceConfig.fromEnvironment()))
       } else {
-        LocalSimulatorUtils(TempFileHandler()).list()
-          .devices
-          .flatMap { runtime ->
-            runtime.value
-              .filter { it.isAvailable && it.state == "Booted" }
-          }
-          .map { ArbigentAvailableDevice.IOS(it) }
+        realIosXCTestDevices() + bootedIosSimulators()
       }
     }
 
@@ -31,4 +23,27 @@ public fun fetchAvailableDevicesByOs(deviceType: ArbigentDeviceOs): List<Arbigen
       listOf(ArbigentAvailableDevice.Web())
     }
   }
+}
+
+private fun realIosXCTestDevices(): List<ArbigentAvailableDevice.IOSRealXCTest> {
+  if (IosRealXCTestDeviceConfig.isSuppressedByMirrorBackend()) return emptyList()
+  val requestedDeviceId = IosRealXCTestDeviceConfig.requestedDeviceIdFromEnvironment()
+  return runCatching {
+    IosRealDeviceCatalog.availableDevices(requestedDeviceId)
+      .map { ArbigentAvailableDevice.IOSRealXCTest(IosRealXCTestDeviceConfig.fromEnvironment(it)) }
+  }.getOrElse { throwable ->
+    if (requestedDeviceId != null) throw throwable
+    arbigentDebugLog("No iOS real XCTest device available: ${throwable.message}")
+    emptyList()
+  }
+}
+
+private fun bootedIosSimulators(): List<ArbigentAvailableDevice.IOS> {
+  return LocalSimulatorUtils(TempFileHandler()).list()
+    .devices
+    .flatMap { runtime ->
+      runtime.value
+        .filter { it.isAvailable && it.state == "Booted" }
+    }
+    .map { ArbigentAvailableDevice.IOS(it) }
 }

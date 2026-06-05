@@ -20,7 +20,6 @@ public data class IosRealXCTestDeviceConfig(
   public val buildDriver: Boolean,
 ) {
   public companion object {
-    public const val DEVICE_KIND_ENV: String = "ARBIGENT_IOS_DEVICE_KIND"
     public const val BACKEND_ENV: String = "ARBIGENT_IOS_REAL_BACKEND"
     public const val DEVICE_ID_ENV: String = "ARBIGENT_IOS_REAL_DEVICE_ID"
     public const val HOST_ENV: String = "ARBIGENT_IOS_XCTEST_HOST"
@@ -37,16 +36,21 @@ public data class IosRealXCTestDeviceConfig(
     private const val DEVELOPMENT_TEAM_ENV = "DEVELOPMENT_TEAM"
     private val mirrorOnlyBackends = setOf("mirror", "mirroir")
 
-    public fun isEnabled(): Boolean {
-      val kind = System.getenv(DEVICE_KIND_ENV)?.lowercase()
-      val backend = System.getenv(BACKEND_ENV)?.lowercase()
-      return kind == "real" && backend !in mirrorOnlyBackends
+    public fun isSuppressedByMirrorBackend(): Boolean {
+      return System.getenv(BACKEND_ENV)?.lowercase() in mirrorOnlyBackends
     }
 
     public fun fromEnvironment(): IosRealXCTestDeviceConfig {
-      val requestedDeviceId = System.getenv(DEVICE_ID_ENV)?.takeIf { it.isNotBlank() }
+      val device = IosRealDeviceCatalog.resolveDevice(requestedDeviceIdFromEnvironment())
+      return fromEnvironment(device)
+    }
+
+    internal fun requestedDeviceIdFromEnvironment(): String? {
+      return System.getenv(DEVICE_ID_ENV)?.takeIf { it.isNotBlank() }
         ?: System.getenv(MAESTRO_DEVICE_ID_ENV)?.takeIf { it.isNotBlank() }
-      val device = IosRealDeviceCatalog.resolveDevice(requestedDeviceId)
+    }
+
+    internal fun fromEnvironment(device: IosRealDevice): IosRealXCTestDeviceConfig {
       return IosRealXCTestDeviceConfig(
         deviceId = device.udid,
         deviceName = device.name,
@@ -79,16 +83,36 @@ internal object IosRealDeviceCatalog {
   private val mapper = jacksonObjectMapper()
 
   fun resolveDevice(requestedDeviceId: String?): IosRealDevice {
-    val devices = listDevices()
-      .filter { it.pairingState == "paired" }
+    val devices = availableDevices(requestedDeviceId)
+    return devices.firstOrNull()
+      ?: throwNoDevice(requestedDeviceId)
+  }
+
+  fun availableDevices(requestedDeviceId: String?): List<IosRealDevice> {
+    val devices = pairedDevices()
     if (requestedDeviceId != null) {
-      return devices.firstOrNull { device ->
+      val selected = devices.firstOrNull { device ->
         device.udid == requestedDeviceId || device.coreDeviceIdentifier == requestedDeviceId
       } ?: throw IllegalArgumentException("No paired iOS real device matches $requestedDeviceId")
+      return listOf(selected)
     }
-    return devices.firstOrNull { it.canConnect }
-      ?: devices.firstOrNull()
-      ?: throw IllegalArgumentException("No paired iOS real device found by devicectl")
+    return devices.sortedWith(
+      compareByDescending<IosRealDevice> { it.canConnect }
+        .thenBy { it.name }
+        .thenBy { it.udid }
+    )
+  }
+
+  private fun pairedDevices(): List<IosRealDevice> {
+    return listDevices()
+      .filter { it.pairingState == "paired" }
+  }
+
+  private fun throwNoDevice(requestedDeviceId: String?): Nothing {
+    if (requestedDeviceId != null) {
+      throw IllegalArgumentException("No paired iOS real device matches $requestedDeviceId")
+    }
+    throw IllegalArgumentException("No paired iOS real device found by devicectl")
   }
 
   fun installedBundleIds(deviceId: String): Set<String> {
