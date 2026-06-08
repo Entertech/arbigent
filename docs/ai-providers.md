@@ -66,9 +66,9 @@ export ARBIGENT_CODEX_TIMEOUT_MS=300000
 
 Codex session cache modes:
 
-- `auto` (default): the first step creates a persisted Codex exec session; later steps use `codex exec resume` with a smaller incremental prompt. If the installed Codex CLI supports `resume --output-schema`, Arbigent keeps schema enforcement on resumed turns. If not, Arbigent resumes without CLI schema enforcement and still validates the returned JSON action in-process.
+- `off` (**default**): always uses stateless `codex exec --ephemeral --output-schema`. Each decision sends a self-contained prompt (bounded text step-history + only the current screenshot) and starts no persistent session. This keeps per-step latency flat regardless of task length. See "Why `off` is the default" in `docs/ios-codex-performance.md`.
+- `auto`: the first step creates a persisted Codex exec session; later steps use `codex exec resume` with a smaller incremental prompt. If the installed Codex CLI supports `resume --output-schema`, Arbigent keeps schema enforcement on resumed turns. If not, Arbigent resumes without CLI schema enforcement and still validates the returned JSON action in-process. Note: a resumed session retains every prior turn's screenshot + UI tree server-side, so per-step latency grows with task length — prefer `off` unless you specifically need server-side session continuity.
 - `schema-only`: resumes only when the installed Codex CLI supports `resume --output-schema`; otherwise it keeps the older stateless `codex exec --output-schema` behavior.
-- `off`: always uses stateless `codex exec --ephemeral --output-schema`.
 
 Each Codex decision writes `durationMs`, timestamps, model, reasoning effort, session cache mode, Codex session id, whether the turn was resumed, whether schema was enforced by the CLI, screenshot path, schema path, process log path, and final JSON response into the step API log under `arbigent-result/jsonls/`. The CLI also writes `arbigent-result/summary.txt` and prints a final `SUCCESS` or `FAILED` conclusion with step counts, duration, last action, and result paths.
 

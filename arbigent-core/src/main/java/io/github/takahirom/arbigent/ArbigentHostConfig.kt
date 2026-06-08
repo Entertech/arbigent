@@ -1,20 +1,22 @@
 package io.github.takahirom.arbigent
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Process-local host configuration loaded by CLI frontends before creating devices.
  */
 @ArbigentInternalApi
 public object ArbigentHostConfig {
-  private val values: ConcurrentHashMap<String, String> = ConcurrentHashMap()
+  // Swap the whole immutable map atomically. The previous clear()+putAll on a
+  // ConcurrentHashMap was non-atomic, so a concurrent get() could observe an
+  // empty/half-populated map mid-replace.
+  private val values: AtomicReference<Map<String, String>> = AtomicReference(emptyMap())
 
   public fun replace(newValues: Map<String, String>) {
-    values.clear()
-    values.putAll(newValues.filterValues { it.isNotBlank() })
+    values.set(newValues.filterValues { it.isNotBlank() }.toMap())
   }
 
   public fun get(key: String): String? {
-    return values[key]?.takeIf { it.isNotBlank() }
+    return values.get()[key]?.takeIf { it.isNotBlank() }
   }
 }

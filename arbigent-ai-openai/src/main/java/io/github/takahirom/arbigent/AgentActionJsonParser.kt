@@ -24,14 +24,18 @@ internal object AgentActionJsonParser {
       val mcpAction = action.removePrefix("mcp_")
       val mcpTool = mcpTools?.firstOrNull { it.name == mcpAction }
         ?: throw IllegalArgumentException("Unknown MCP action: $action. Available actions: ${mcpTools?.joinToString { it.name }}")
+      // The real tool arguments live in the nested `arguments` object when the
+      // model wraps its answer (Codex requires a top-level {action,text,arguments}
+      // envelope). When there is no wrapper (OpenAI function calls pass the tool
+      // params directly), fall back to the top-level object. In both cases strip
+      // arbigent's own envelope keys (memo / image description) so neither they
+      // nor the structural keys (action/text/arguments) reach the MCP tool.
+      val answerItemKeys = ArbigentAiAnswerItems.entries.map { item -> item.key }.toSet()
+      val rawToolArgs = (argumentsJsonData["arguments"] as? JsonObject) ?: argumentsJsonData
       return ExecuteMcpToolAgentAction(
         tool = mcpTool,
         executeToolArgs = ExecuteToolArgs(
-          arguments = argumentsJsonData.let {
-            JsonObject(it.filterKeys { key ->
-              !ArbigentAiAnswerItems.entries.map { item -> item.key }.contains(key)
-            }.toMap())
-          },
+          arguments = JsonObject(rawToolArgs.filterKeys { key -> key !in answerItemKeys }),
         )
       )
     }

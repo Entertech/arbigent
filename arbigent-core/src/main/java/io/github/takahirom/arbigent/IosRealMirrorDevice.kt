@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.github.takahirom.arbigent.result.ArbigentUiTreeStrings
 import maestro.KeyCode
+import maestro.SwipeDirection
 import maestro.TreeNode
 import maestro.orchestra.MaestroCommand
 import java.io.BufferedWriter
@@ -87,12 +88,21 @@ internal class IosRealMirrorDevice(
   private var cachedScreen: IosMirrorScreen? = null
 
   init {
-    val health = mcpClient.callTool("check_health").text
-    if (health.contains("[FAIL]") || health.contains("Issues detected")) {
-      throw IllegalStateException(
-        "iOS real mirror backend is not ready.\n$health\n" +
-          "Unlock the Mac and iPhone, open iPhone Mirroring, and resume the mirrored session."
-      )
+    // The default mcpClient has already spawned `npx mirroir-mcp` plus daemon
+    // threads by the time the health check runs, so any failure here must close
+    // it — otherwise the object never finishes constructing and close() is never
+    // called, leaking the process and threads.
+    try {
+      val health = mcpClient.callTool("check_health").text
+      if (health.contains("[FAIL]") || health.contains("Issues detected")) {
+        throw IllegalStateException(
+          "iOS real mirror backend is not ready.\n$health\n" +
+            "Unlock the Mac and iPhone, open iPhone Mirroring, and resume the mirrored session."
+        )
+      }
+    } catch (e: Throwable) {
+      runCatching { mcpClient.close() }
+      throw e
     }
   }
 
@@ -138,6 +148,46 @@ internal class IosRealMirrorDevice(
         cachedScreen = null
         return@forEach
       }
+      command.swipeCommand?.let { swipe ->
+        val screen = screen()
+        // Directional swipe via the mirror MCP. Gesture direction matches
+        // Maestro semantics: Swipe UP moves the finger up so lower content is
+        // revealed, mirroring the scrollCommand mapping above.
+        val nearLow = 0.28
+        val nearHigh = 0.78
+        val (fromX, fromY, toX, toY) = when (swipe.direction) {
+          SwipeDirection.DOWN -> arrayOf(
+            screen.width / 2, (screen.height * nearLow).toInt(),
+            screen.width / 2, (screen.height * nearHigh).toInt(),
+          )
+          SwipeDirection.LEFT -> arrayOf(
+            (screen.width * nearHigh).toInt(), screen.height / 2,
+            (screen.width * nearLow).toInt(), screen.height / 2,
+          )
+          SwipeDirection.RIGHT -> arrayOf(
+            (screen.width * nearLow).toInt(), screen.height / 2,
+            (screen.width * nearHigh).toInt(), screen.height / 2,
+          )
+          // UP (and any null/unknown direction) defaults to revealing lower content.
+          else -> arrayOf(
+            screen.width / 2, (screen.height * nearHigh).toInt(),
+            screen.width / 2, (screen.height * nearLow).toInt(),
+          )
+        }
+        mcpClient.callTool(
+          "swipe",
+          mapOf(
+            "from_x" to fromX,
+            "from_y" to fromY,
+            "to_x" to toX,
+            "to_y" to toY,
+            "duration_ms" to 450,
+            "cursor_mode" to "direct",
+          )
+        )
+        cachedScreen = null
+        return@forEach
+      }
       command.pressKeyCommand?.let {
         mcpClient.callTool("press_key", mapOf("key" to it.code.toMirroirKeyName()))
         cachedScreen = null
@@ -167,7 +217,10 @@ internal class IosRealMirrorDevice(
         cachedScreen = null
         return@forEach
       }
-      throw UnsupportedOperationException("Unsupported command for iOS real mirror backend: $command")
+      // Throw a recoverable error: ArbigentAgent catches IllegalStateException per
+      // action and records it as feedback so the agent can try another action,
+      // instead of aborting the whole scenario on an unmapped command.
+      throw IllegalStateException("Unsupported command for iOS real mirror backend: $command")
     }
   }
 
@@ -339,8 +392,8 @@ internal class ArbigentMirroirMcpClient(
   private val mapper: ObjectMapper = jacksonObjectMapper()
   private val nextId = AtomicInteger(1)
   private val pending = ConcurrentHashMap<Int, CompletableFuture<JsonNode>>()
-  private var process: Process? = null
-  private var writer: BufferedWriter? = null
+  @Volatile private var process: Process? = null
+  @Volatile private var writer: BufferedWriter? = null
 
   @Synchronized
   fun callTool(name: String, arguments: Map<String, Any?> = emptyMap()): MirroirToolResult {
@@ -367,8 +420,15 @@ internal class ArbigentMirroirMcpClient(
     writer = BufferedWriter(OutputStreamWriter(startedProcess.outputStream, StandardCharsets.UTF_8))
 
     thread(name = "arbigent-mirroir-mcp-stdout", isDaemon = true) {
-      startedProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
-        lines.forEach(::handleOutputLine)
+      try {
+        startedProcess.inputStream.bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
+          lines.forEach(::handleOutputLine)
+        }
+      } finally {
+        // Reader hit EOF / the process died: fail every pending request so any
+        // caller blocked in future.get() returns immediately instead of waiting
+        // the full timeout for a response that will never arrive.
+        failAllPending(IllegalStateException("mirroir-mcp process ended before responding. Command: $command"))
       }
     }
     thread(name = "arbigent-mirroir-mcp-stderr", isDaemon = true) {
@@ -388,6 +448,12 @@ internal class ArbigentMirroirMcpClient(
       )
     sendRequest("initialize", initParams)
     sendNotification("notifications/initialized", mapper.createObjectNode())
+  }
+
+  private fun failAllPending(cause: Throwable) {
+    pending.keys.toList().forEach { id ->
+      pending.remove(id)?.completeExceptionally(cause)
+    }
   }
 
   private fun handleOutputLine(line: String) {
@@ -504,6 +570,10 @@ internal class ArbigentDevicectlClient(
     )
   }
 
+  fun uninstall(bundleId: String) {
+    runPlain("device", "uninstall", "app", "--device", deviceId, bundleId)
+  }
+
   fun clearAppState(bundleId: String) {
     terminate(bundleId)
     val emptyDirectory = Files.createTempDirectory("arbigent-ios-empty-app-data-")
@@ -580,17 +650,24 @@ internal class ArbigentDevicectlClient(
   }
 
   private fun runPlain(args: List<String>) {
-    val process = ProcessBuilder(listOf("xcrun", "devicectl") + args)
-      .redirectOutput(File(if (System.getProperty("os.name").startsWith("Windows")) "NUL" else "/dev/null"))
-      .redirectError(ProcessBuilder.Redirect.PIPE)
-      .start()
-    if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-      process.destroyForcibly()
-      throw IllegalStateException("devicectl timed out: $args")
-    }
-    if (process.exitValue() != 0) {
-      val error = process.errorStream.bufferedReader().readText()
-      throw IllegalStateException("devicectl failed: $args\n$error")
+    // Redirect stderr to a file rather than a PIPE: a large stderr left unread
+    // until after waitFor can fill the pipe buffer and block the child, turning
+    // a real failure into a misleading timeout.
+    val errorFile = File.createTempFile("arbigent-devicectl-stderr", ".log")
+    try {
+      val process = ProcessBuilder(listOf("xcrun", "devicectl") + args)
+        .redirectOutput(File(if (System.getProperty("os.name").startsWith("Windows")) "NUL" else "/dev/null"))
+        .redirectError(errorFile)
+        .start()
+      if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        process.destroyForcibly()
+        throw IllegalStateException("devicectl timed out: $args")
+      }
+      if (process.exitValue() != 0) {
+        throw IllegalStateException("devicectl failed: $args\n${errorFile.readText()}")
+      }
+    } finally {
+      errorFile.delete()
     }
   }
 

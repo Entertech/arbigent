@@ -15,6 +15,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.awt.image.BufferedImage.TYPE_INT_RGB
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -61,7 +62,14 @@ public class CodexCliAiProvider(
   public companion object {
     public const val DEFAULT_CODEX_EXECUTABLE: String = "codex"
     public const val DEFAULT_REASONING_EFFORT: String = "low"
-    public const val DEFAULT_SESSION_CACHE_MODE: String = "auto"
+    // Default to stateless `off`. A resumed Codex session retains every prior
+    // turn's screenshot + UI tree server-side, so per-step latency grows with
+    // task length (measured 27s→89s over 14 steps). `off` sends a self-contained
+    // prompt (bounded text history + only the current screenshot) each call, so
+    // latency stays flat (~23s avg, 33s max on the same task — ~2x faster total
+    // and no degradation). `auto`/`schema-only` remain available for callers that
+    // prefer server-side session continuity.
+    public const val DEFAULT_SESSION_CACHE_MODE: String = "off"
     public const val DEFAULT_SANDBOX: String = "read-only"
     public const val DEFAULT_APPROVAL_POLICY: String = "never"
     public const val DEFAULT_TIMEOUT_MS: Long = 300_000L
@@ -105,14 +113,32 @@ internal class CodexCliAi(
 
     val fullPrompt = buildDecisionPrompt(decisionInput, resumedPrompt = false)
     val resumedPrompt = buildDecisionPrompt(decisionInput, resumedPrompt = true)
-    val response = runCodexJson(
-      requestUuid = decisionInput.requestUuid,
-      fullPrompt = fullPrompt,
-      resumedPrompt = resumedPrompt,
-      screenshotFile = original.toAnnotatedFile(),
-      outputSchema = buildDecisionOutputSchema(decisionInput.agentActionTypes, decisionInput.mcpTools),
-      apiCallJsonLFile = File(decisionInput.apiCallJsonLFilePath),
-    )
+    val response = try {
+      runCodexJson(
+        requestUuid = decisionInput.requestUuid,
+        fullPrompt = fullPrompt,
+        resumedPrompt = resumedPrompt,
+        screenshotFile = original.toAnnotatedFile(),
+        outputSchema = buildDecisionOutputSchema(decisionInput.agentActionTypes, decisionInput.mcpTools),
+        apiCallJsonLFile = File(decisionInput.apiCallJsonLFilePath),
+      )
+    } catch (e: Exception) {
+      // Mirror the OpenAI provider: record a failed step (with the current
+      // screenshot and UI tree) before propagating a hard Codex failure
+      // (timeout / non-zero exit / empty message), so the run's last step and
+      // its context are not lost.
+      decisionInput.contextHolder.addStep(
+        ArbigentContextHolder.Step(
+          stepId = decisionInput.stepId,
+          agentAction = FailedAgentAction(),
+          feedback = "Failed to get a decision from Codex CLI: ${e.message}.",
+          cacheKey = decisionInput.cacheKey,
+          screenshotFilePath = decisionInput.screenshotFilePath,
+          uiTreeStrings = decisionInput.uiTreeStrings,
+        )
+      )
+      throw e
+    }
 
     val step = try {
       val responseObj = parseJsonObject(response.lastMessage)
@@ -494,9 +520,16 @@ Only use GoalAchieved when the current screen or earlier session turns prove eve
       processBuilder.directory(File(it))
     }
     val process = processBuilder.start()
-    process.outputStream.bufferedWriter().use { writer ->
-      writer.write(prompt)
-      writer.newLine()
+    try {
+      process.outputStream.bufferedWriter().use { writer ->
+        writer.write(prompt)
+        writer.newLine()
+      }
+    } catch (e: IOException) {
+      // The Codex process can exit before consuming stdin (broken pipe). Don't
+      // surface a raw IOException here; fall through to waitFor so the exit-code
+      // / timeout path reports a clean Codex failure that callers can annotate.
+      arbigentInfoLog("Failed to write prompt to Codex stdin (process may have exited early): ${e.message}")
     }
     val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
     if (!finished) {

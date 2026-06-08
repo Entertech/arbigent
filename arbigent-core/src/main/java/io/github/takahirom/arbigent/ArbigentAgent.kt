@@ -1366,6 +1366,10 @@ private suspend fun verifyGoalCompletion(
         previousSteps = decisionInput.contextHolder.steps(),
       )
     )
+  } catch (e: CancellationException) {
+    // Never swallow cooperative cancellation as a "rejection" — propagate it so
+    // a cancelled run actually stops.
+    throw e
   } catch (e: Exception) {
     ArbigentGoalCompletionVerificationResult.Rejected(
       "Goal completion verifier failed: ${e.message ?: e::class.simpleName}"

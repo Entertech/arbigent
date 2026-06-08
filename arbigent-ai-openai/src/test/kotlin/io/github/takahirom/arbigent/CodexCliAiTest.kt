@@ -195,6 +195,19 @@ exit 0
     assertEquals("019ea5de-adc2-7551-b0bf-04104522bfa8", responseJson["sessionId"]!!.jsonPrimitive.content)
   }
 
+  @Test
+  fun `createAi returns a fresh runtime per call so codex sessions do not leak across runs`() {
+    val provider = CodexCliAiProvider(codexExecutable = "codex")
+    val first = provider.createAi()
+    val second = provider.createAi()
+    // Each agent run (scenario or retry) must get its own CodexCliAi so the
+    // per-instance Codex session id never carries over between unrelated runs.
+    assertTrue(
+      "Expected a distinct ArbigentAi instance per createAi() call",
+      first !== second,
+    )
+  }
+
   private fun elementList(): ArbigentElementList {
     return ArbigentElementList(
       elements = listOf(

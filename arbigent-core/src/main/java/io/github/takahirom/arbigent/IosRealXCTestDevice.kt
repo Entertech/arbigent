@@ -106,18 +106,36 @@ internal object IosRealDeviceCatalog {
   }
 
   fun availableDevices(requestedDeviceId: String?): List<IosRealDevice> {
-    val devices = pairedDevices()
+    return selectDevices(pairedDevices(), requestedDeviceId)
+  }
+
+  internal fun selectDevices(
+    pairedDevices: List<IosRealDevice>,
+    requestedDeviceId: String?,
+  ): List<IosRealDevice> {
     if (requestedDeviceId != null) {
-      val selected = devices.firstOrNull { device ->
+      val selected = pairedDevices.firstOrNull { device ->
         device.udid == requestedDeviceId || device.coreDeviceIdentifier == requestedDeviceId
       } ?: throw IllegalArgumentException("No paired iOS real device matches $requestedDeviceId")
+      // The user explicitly chose this device, so don't hard-fail on a transient
+      // canConnect=false (the CoreDevice capability flag flaps while a physically
+      // connected device negotiates). Warn and let connectToDevice() be the source
+      // of truth — it surfaces a real error if the device is genuinely unreachable.
+      if (!selected.canConnect) {
+        arbigentWarnLog(
+          "iOS real device $requestedDeviceId reports not-currently-connectable; attempting anyway. " +
+            "If connection fails, unlock and reconnect the device (USB/Wi-Fi)."
+        )
+      }
       return listOf(selected)
     }
-    return devices.sortedWith(
-      compareByDescending<IosRealDevice> { it.canConnect }
-        .thenBy { it.name }
-        .thenBy { it.udid }
-    )
+    // Only surface connectable devices when auto-selecting. Otherwise an offline
+    // paired iPhone can shadow a booted simulator: DeviceFinder orders real
+    // devices before simulators and the CLI takes the first candidate without
+    // trying the next one, so it would connect-fail on the offline phone.
+    return pairedDevices
+      .filter { it.canConnect }
+      .sortedWith(compareBy<IosRealDevice> { it.name }.thenBy { it.udid })
   }
 
   private fun pairedDevices(): List<IosRealDevice> {
@@ -194,17 +212,24 @@ internal object IosRealDeviceCatalog {
   }
 
   private fun runPlain(args: List<String>) {
-    val process = ProcessBuilder(listOf("xcrun", "devicectl") + args)
-      .redirectOutput(File(if (System.getProperty("os.name").startsWith("Windows")) "NUL" else "/dev/null"))
-      .redirectError(ProcessBuilder.Redirect.PIPE)
-      .start()
-    if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-      process.destroyForcibly()
-      throw IllegalStateException("devicectl timed out: $args")
-    }
-    if (process.exitValue() != 0) {
-      val error = process.errorStream.bufferedReader().readText()
-      throw IllegalStateException("devicectl failed: $args\n$error")
+    // Redirect stderr to a file rather than an undrained PIPE: a large stderr
+    // read only after waitFor can fill the pipe buffer and block the child,
+    // turning a real failure into a misleading timeout.
+    val errorFile = File.createTempFile("arbigent-devicectl-stderr", ".log")
+    try {
+      val process = ProcessBuilder(listOf("xcrun", "devicectl") + args)
+        .redirectOutput(File(if (System.getProperty("os.name").startsWith("Windows")) "NUL" else "/dev/null"))
+        .redirectError(errorFile)
+        .start()
+      if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        process.destroyForcibly()
+        throw IllegalStateException("devicectl timed out: $args")
+      }
+      if (process.exitValue() != 0) {
+        throw IllegalStateException("devicectl failed: $args\n${errorFile.readText()}")
+      }
+    } finally {
+      errorFile.delete()
     }
   }
 

@@ -1,5 +1,59 @@
 # iOS Codex Task Performance Notes
 
+## Session cache mode: stateless `off` is the default (measured)
+
+The biggest, most general Codex latency lever is the session cache mode. As of
+this change the default is **`off`** (was `auto`).
+
+### Measurement — iPhone 12 mini, `gpt-5.5` @ `reasoning_effort=low`
+
+Same App Store task, `auto` vs `off`, plus a second app to check generality:
+
+| run | mode | steps | codex avg | codex max | codex total | per-step trend |
+|---|---|---|---|---|---|---|
+| Task 1 (App Store) | `auto` | 14 | 45.5s | 89.0s | 636.7s | **grows 27s→89s** |
+| Task 1 (App Store) | `off`  | 13 | 23.1s | 33.5s | 299.8s | **flat ~23s** |
+| Task 2 (Apple Music) | `off` | 13 | 22.5s | 26.5s | 292.1s | **flat ~22s** |
+
+`off` is ~2x faster total, ~2.7x lower peak, and does not degrade with task length.
+
+### Mechanism (why `auto` grows and `off` does not)
+
+A resumed Codex session (`codex exec resume`) retains **every prior turn's
+screenshot + UI tree server-side**. The model pays attention/reasoning cost over
+that growing multimodal context, so each step gets slower as the task proceeds.
+
+The smoking gun: in `auto` the per-call **prompt stayed flat (~10k chars)** across
+all 14 steps, yet latency climbed 27s→89s. The growth is therefore the server-side
+session, not what Arbigent sends. `off` (`codex exec --ephemeral`) starts no
+session: each decision is a self-contained prompt = bounded text step-history +
+**only the current screenshot**. One image per call, no accumulation → flat latency.
+
+### Why this is general, not a single-case tune
+
+The accumulation is a property of *any* long multimodal resumed session and is
+app-independent. It was confirmed flat on two different apps (App Store, Apple
+Music), and the gap *widens* with task length (step 12: 19s `off` vs 53s `auto`),
+so longer/harder tasks benefit more, not less.
+
+### Trade-offs and knobs
+
+- `off` resends the text step-history each call. Text tokens are cheap versus
+  image tokens, and the resumed prompt previously carried only the single
+  `LAST_RECORDED_STEP` — so `off` actually gives the model *richer* explicit recent
+  context per decision, which can improve navigation (Task 2 succeeded under `off`).
+- For very long runs, bound the text history with `historicalStepLimit` to keep
+  `off` flat indefinitely (it is unbounded by default; the measured 13–14 step
+  tasks did not need it).
+- `auto`/`schema-only` remain available via `--codex-session-cache` for callers who
+  specifically want server-side session continuity.
+- Model choice is the remaining floor: `gpt-5.5` at `low` effort is ~22s/step even
+  stateless. A faster Codex model for routine UI decisions would lower that further;
+  Arbigent intentionally does not override the user's configured model, only the
+  reasoning effort.
+
+
+
 ## Reference Run
 
 Command:

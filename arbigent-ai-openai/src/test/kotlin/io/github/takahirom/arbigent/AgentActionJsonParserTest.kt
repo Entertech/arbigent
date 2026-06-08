@@ -92,6 +92,63 @@ class AgentActionJsonParserTest {
     assertEquals(SwipeAgentAction(SwipeDirection.DOWN), action)
   }
 
+  @Test
+  fun `mcp action keeps only nested tool arguments from codex envelope`() {
+    val mcpTool = MCPTool(tool = Tool(name = "search"), serverName = "test")
+    val arguments = AgentActionJsonParser.normalizeArguments(
+      JsonObject(
+        mapOf(
+          "action" to JsonPrimitive("mcp_search"),
+          "text" to JsonPrimitive(""),
+          "arguments" to JsonObject(mapOf("query" to JsonPrimitive("ado"))),
+          "arbigent-memo" to JsonPrimitive("memo"),
+          "arbigent-image-description" to JsonPrimitive("desc"),
+        )
+      )
+    )
+
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = emptyList(),
+      action = "mcp_search",
+      argumentsJsonData = arguments,
+      elements = emptyElements(),
+      mcpTools = listOf(mcpTool),
+    )
+
+    action as ExecuteMcpToolAgentAction
+    // Only the real tool params survive — no action/text/arguments envelope and
+    // no arbigent answer-item keys.
+    assertEquals(
+      JsonObject(mapOf("query" to JsonPrimitive("ado"))),
+      action.executeToolArgs.arguments,
+    )
+  }
+
+  @Test
+  fun `mcp action strips answer items from flat openai arguments`() {
+    val mcpTool = MCPTool(tool = Tool(name = "search"), serverName = "test")
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = emptyList(),
+      action = "mcp_search",
+      // OpenAI passes the tool params flat (no wrapper), with answer items appended.
+      argumentsJsonData = JsonObject(
+        mapOf(
+          "query" to JsonPrimitive("ado"),
+          "arbigent-memo" to JsonPrimitive("memo"),
+          "arbigent-image-description" to JsonPrimitive("desc"),
+        )
+      ),
+      elements = emptyElements(),
+      mcpTools = listOf(mcpTool),
+    )
+
+    action as ExecuteMcpToolAgentAction
+    assertEquals(
+      JsonObject(mapOf("query" to JsonPrimitive("ado"))),
+      action.executeToolArgs.arguments,
+    )
+  }
+
   private fun emptyElements(): ArbigentElementList = ArbigentElementList(emptyList(), screenWidth = 100)
 
   private fun elementList(size: Int): ArbigentElementList {

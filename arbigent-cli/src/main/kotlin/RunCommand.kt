@@ -142,7 +142,6 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
     val aiProvider = createAiProvider(aiType, aiApiLoggingEnabled, workingDirectory)
     arbigentDebugLog("  ai-provider-runtime: ${aiProvider.metadata.runtime}")
-    val ai = aiProvider.createAi()
 
     var device: ArbigentDevice? = null
     val appSettings = CliAppSettings(
@@ -152,7 +151,10 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     )
     val arbigentProject = ArbigentProject(
       file = File(projectFile),
-      aiFactory = { ai },
+      // Create a fresh AI per agent run so per-runtime state (e.g. Codex CLI
+      // session id) is never reused across scenarios or retries. This matches
+      // the UI, which also constructs a new AI for each agent instance.
+      aiFactory = { aiProvider.createAi() },
       deviceFactory = { device ?: throw UnsupportedOperationException("Device not available in dry-run mode") },
       appSettings = appSettings
     )

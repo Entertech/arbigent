@@ -62,10 +62,17 @@ internal class ArbigentExternalXCTestInstaller(
   }
 
   override fun uninstall(): Boolean {
+    // This is a real-device installer, so the driver bundles must be removed via
+    // `xcrun devicectl` (CoreDevice). The Maestro helper used `xcrun simctl`,
+    // which only targets simulators and silently no-ops on a real UDID — making
+    // reinstallDriver ineffective. Log failures instead of swallowing them.
+    val devicectl = ArbigentDevicectlClient(deviceId)
     return runCatching {
-      xcRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-iosUITests.xctrunner", deviceId)
-      xcRunnerCLIUtils.uninstall("dev.mobile.maestro-driver-ios", deviceId)
+      devicectl.uninstall("dev.mobile.maestro-driver-iosUITests.xctrunner")
+      devicectl.uninstall("dev.mobile.maestro-driver-ios")
       true
+    }.onFailure {
+      arbigentInfoLog("Failed to uninstall XCTest driver via devicectl on $deviceId: ${it.message}")
     }.getOrDefault(false)
   }
 

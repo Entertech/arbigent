@@ -63,7 +63,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     applyLogLevel(logLevel)
 
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
-    val ai = createAi(aiType, aiApiLoggingEnabled, workingDirectory)
+    val aiProvider = createAiProvider(aiType, aiApiLoggingEnabled, workingDirectory)
     configureHostSettings(listOf("run.task", "task", "run"))
     val device = connectDevice(os)
 
@@ -82,7 +82,9 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
         )
       )
       val appSettings = CliAppSettings(workingDirectory = workingDirectory, path = null)
-      val arbigentProject = ArbigentProject(projectFileContent, aiFactory = { ai }, deviceFactory = { device }, appSettings = appSettings)
+      // Fresh AI per agent run keeps per-runtime state (e.g. Codex CLI session
+      // id) from leaking across retries of this task.
+      val arbigentProject = ArbigentProject(projectFileContent, aiFactory = { aiProvider.createAi() }, deviceFactory = { device }, appSettings = appSettings)
       val scenarios = arbigentProject.scenarios
 
       Runtime.getRuntime().addShutdownHook(object : Thread() {

@@ -148,41 +148,48 @@ public sealed interface ArbigentAvailableDevice {
       } else {
         null
       }
-      val xcTestInstaller: XCTestInstaller = config.xctestrunFile?.let { xctestrunFile ->
-        ArbigentExternalXCTestInstaller(
-          deviceId = config.deviceId,
-          host = config.host,
-          port = config.port,
-          xctestrunFile = File(xctestrunFile),
-          reinstallDriver = config.reinstallDriver,
-        )
-      } ?: run {
-        val tempFileHandler = TempFileHandler()
-        val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
-        val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
-        val driverProductsDir = resolveRealIosDriverProducts(config)
-        LocalXCTestInstaller(
-          deviceId = config.deviceId,
-          host = config.host,
-          deviceType = IOSDeviceType.REAL,
-          defaultPort = config.port,
-          reinstallDriver = config.reinstallDriver,
-          iOSDriverConfig = IOSDriverConfig(
-            prebuiltRunner = config.preBuiltRunner,
-            sourceDirectory = driverProductsDir.absolutePath,
-            context = Context.CLI,
-            snapshotKeyHonorModalViews = null,
-          ),
-          deviceController = deviceController,
-          tempFileHandler = tempFileHandler,
-          logsDir = xctestLogsDir(),
-        )
-      }
+      // Construct the installer inside the try so that a throw during installer
+      // construction (e.g. listDeviceViaDeviceCtl / resolveRealIosDriverProducts)
+      // still runs the cleanup that closes the already-started iproxy forwarder.
+      var xcTestInstaller: XCTestInstaller? = null
       try {
+        val installer: XCTestInstaller = config.xctestrunFile?.let { xctestrunFile ->
+          ArbigentExternalXCTestInstaller(
+            deviceId = config.deviceId,
+            host = config.host,
+            port = config.port,
+            xctestrunFile = File(xctestrunFile),
+            reinstallDriver = config.reinstallDriver,
+          )
+        } ?: run {
+          val tempFileHandler = TempFileHandler()
+          val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
+          val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
+          val driverProductsDir = resolveRealIosDriverProducts(config)
+          LocalXCTestInstaller(
+            deviceId = config.deviceId,
+            host = config.host,
+            deviceType = IOSDeviceType.REAL,
+            defaultPort = config.port,
+            reinstallDriver = config.reinstallDriver,
+            iOSDriverConfig = IOSDriverConfig(
+              prebuiltRunner = config.preBuiltRunner,
+              sourceDirectory = driverProductsDir.absolutePath,
+              context = Context.CLI,
+              snapshotKeyHonorModalViews = null,
+            ),
+            deviceController = deviceController,
+            tempFileHandler = tempFileHandler,
+            logsDir = xctestLogsDir(),
+          )
+        }
+        // Record the constructed installer so the catch can close it on a later
+        // failure; `installer` itself stays non-null for the wiring below.
+        xcTestInstaller = installer
         val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
         val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
         val xcTestDriverClient = XCTestDriverClient(
-          installer = xcTestInstaller,
+          installer = installer,
           client = XCTestClient(config.host, config.port),
           reinstallDriver = config.reinstallDriver,
         )
@@ -207,7 +214,7 @@ public sealed interface ArbigentAvailableDevice {
           closeHook = { portForwarder?.close() },
         )
       } catch (throwable: Throwable) {
-        runCatching { xcTestInstaller.close() }
+        runCatching { xcTestInstaller?.close() }
         portForwarder?.close()
         throw throwable
       }
@@ -254,16 +261,31 @@ internal class IosRealXCTestPortForwarder(
       return
     }
     if (process?.isAlive == true) return
-    process = ProcessBuilder(
+    // Redirect to a log file (not an undrained PIPE, which would eventually
+    // block this long-lived process), then verify the process actually came up.
+    // A startup failure such as "port already in use" must surface here, not
+    // later as a misleading "XCTest driver not ready" timeout.
+    val logFile = File(xctestLogsDir(), "iproxy-$localPort.log")
+    val started = ProcessBuilder(
       "iproxy",
       "--udid",
       deviceId,
       "$localPort:$devicePort",
     )
-      .redirectOutput(ProcessBuilder.Redirect.PIPE)
-      .redirectError(ProcessBuilder.Redirect.PIPE)
+      .redirectErrorStream(true)
+      .redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
       .start()
+    process = started
     Thread.sleep(500)
+    if (!started.isAlive) {
+      val exitCode = started.exitValue()
+      val log = logFile.takeIf { it.exists() }?.readText()?.takeLast(2000).orEmpty()
+      process = null
+      throw IllegalStateException(
+        "iproxy exited early (code $exitCode) while forwarding $localPort:$devicePort on $deviceId. " +
+          "Is the local port already in use?\n$log"
+      )
+    }
   }
 
   override fun close() {

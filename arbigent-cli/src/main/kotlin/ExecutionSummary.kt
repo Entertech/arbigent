@@ -29,13 +29,19 @@ internal fun saveAndPrintExecutionSummary(
   return saveExecutionArtifacts(arbigentProject, scenarios, resultFile, resultDir, printSummary = true)
 }
 
+// Serializes all artifact writes (result.yml / report.html / summary.txt). The
+// periodic snapshot coroutine and the shutdown hook can both call in — without
+// this lock a SIGTERM mid-snapshot could interleave two writers and truncate an
+// artifact.
+private val artifactWriteLock = Any()
+
 internal fun saveExecutionArtifacts(
   arbigentProject: ArbigentProject,
   scenarios: List<ArbigentScenario>,
   resultFile: File,
   resultDir: File,
   printSummary: Boolean = false,
-): ArbigentProjectExecutionResult {
+): ArbigentProjectExecutionResult = synchronized(artifactWriteLock) {
   val result = arbigentProject.getResult(scenarios)
   ArbigentProjectSerializer().save(result, resultFile)
   ArbigentHtmlReport().saveReportHtml(
@@ -50,7 +56,7 @@ internal fun saveExecutionArtifacts(
     println()
     println(summary)
   }
-  return result
+  result
 }
 
 internal fun buildExecutionSummary(

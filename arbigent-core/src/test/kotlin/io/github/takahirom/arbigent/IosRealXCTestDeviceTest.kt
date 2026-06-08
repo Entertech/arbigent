@@ -3,6 +3,7 @@ package io.github.takahirom.arbigent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -110,6 +111,54 @@ class IosRealXCTestDeviceTest {
       assertFalse(config.buildDriver)
     } finally {
       ArbigentHostConfig.replace(emptyMap())
+    }
+  }
+
+  @Test
+  fun `selectDevices skips offline paired devices when auto-selecting`() {
+    val offlinePhone = IosRealDevice(
+      coreDeviceIdentifier = "CD1", udid = "UDID-OFFLINE", name = "iPhone 12 mini",
+      modelName = "iPhone", pairingState = "paired", tunnelState = "unavailable", canConnect = false,
+    )
+    val onlinePhone = IosRealDevice(
+      coreDeviceIdentifier = "CD2", udid = "UDID-ONLINE", name = "iPhone 15",
+      modelName = "iPhone", pairingState = "paired", tunnelState = "connected", canConnect = true,
+    )
+
+    assertEquals(
+      listOf(onlinePhone),
+      IosRealDeviceCatalog.selectDevices(listOf(offlinePhone, onlinePhone), requestedDeviceId = null),
+    )
+    // Only the offline phone is paired -> auto-select yields nothing, so a booted
+    // simulator can win instead of connect-failing on the offline phone.
+    assertTrue(
+      IosRealDeviceCatalog.selectDevices(listOf(offlinePhone), requestedDeviceId = null).isEmpty()
+    )
+  }
+
+  @Test
+  fun `selectDevices proceeds with an explicitly requested device even if it reports not-connectable`() {
+    // An explicitly requested device must not be hard-rejected on a transient
+    // canConnect=false (the flag flaps while a connected device negotiates);
+    // connectToDevice() is the source of truth.
+    val flappingPhone = IosRealDevice(
+      coreDeviceIdentifier = "CD1", udid = "UDID-FLAP", name = "iPhone",
+      modelName = "iPhone", pairingState = "paired", tunnelState = "unavailable", canConnect = false,
+    )
+    assertEquals(
+      listOf(flappingPhone),
+      IosRealDeviceCatalog.selectDevices(listOf(flappingPhone), requestedDeviceId = "UDID-FLAP"),
+    )
+  }
+
+  @Test
+  fun `selectDevices still fails when an explicitly requested device is not paired`() {
+    val phone = IosRealDevice(
+      coreDeviceIdentifier = "CD1", udid = "UDID-A", name = "iPhone",
+      modelName = "iPhone", pairingState = "paired", tunnelState = "connected", canConnect = true,
+    )
+    assertFailsWith<IllegalArgumentException> {
+      IosRealDeviceCatalog.selectDevices(listOf(phone), requestedDeviceId = "UDID-MISSING")
     }
   }
 
