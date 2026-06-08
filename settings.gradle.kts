@@ -21,6 +21,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
+        // Resolve the looktech Maestro fork (ai.looktech:maestro-*) from Maven Local
+        // until it is published to a remote repo.
+        mavenLocal()
         google()
         mavenCentral()
         maven("https://www.jetbrains.com/intellij-repository/releases")
