@@ -5,6 +5,7 @@ import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
 import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.font.FontRenderContext
 import java.awt.font.TextLayout
 import java.awt.image.BufferedImage
@@ -153,13 +154,43 @@ public class ArbigentCanvas(width: Int, height: Int, bufferedImageType: Int) {
 
   public fun save(screenshotFilePath: String, aiOptions: ArbigentAiOptions? = null) {
     ArbigentImageEncoder.saveImage(
-      image = bufferedImage,
+      image = capLongEdge(bufferedImage, modelImageMaxLongEdge()),
       filePath = screenshotFilePath,
       format = aiOptions?.imageFormat ?: ImageFormat.PNG
     )
   }
 
   public companion object {
+    // Default cap on the long edge of the annotated screenshot sent to the model.
+    // High-DPI devices (e.g. Pixel 4: 1080x2280) otherwise ship a ~9x larger image
+    // than iOS (~375px wide), roughly doubling model latency. arbigent uses
+    // set-of-marks (numbered boxes + ClickWithIndex returns an index, not pixel
+    // coordinates), so high resolution is unnecessary for grounding. iOS images are
+    // already under this cap and unchanged. Override with ARBIGENT_MODEL_IMAGE_MAX_LONG_EDGE
+    // (set <=0 to disable). ClickAtCoordinates is opt-in / off by default, so the
+    // default action set is unaffected by the downscale.
+    public const val DEFAULT_MODEL_IMAGE_MAX_LONG_EDGE: Int = 1024
+
+    internal fun modelImageMaxLongEdge(): Int =
+      System.getenv("ARBIGENT_MODEL_IMAGE_MAX_LONG_EDGE")?.toIntOrNull()
+        ?: DEFAULT_MODEL_IMAGE_MAX_LONG_EDGE
+
+    internal fun capLongEdge(image: BufferedImage, maxLongEdge: Int): BufferedImage {
+      val longEdge = maxOf(image.width, image.height)
+      if (maxLongEdge <= 0 || longEdge <= maxLongEdge) return image
+      val scale = maxLongEdge.toDouble() / longEdge
+      val w = (image.width * scale).toInt().coerceAtLeast(1)
+      val h = (image.height * scale).toInt().coerceAtLeast(1)
+      val type = if (image.type != BufferedImage.TYPE_CUSTOM) image.type else BufferedImage.TYPE_INT_RGB
+      val scaled = BufferedImage(w, h, type)
+      val g = scaled.createGraphics()
+      g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+      g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+      g.drawImage(image, 0, 0, w, h, null)
+      g.dispose()
+      return scaled
+    }
+
     public fun load(file: File, width: Int, bufferedImageType: Int): ArbigentCanvas {
       val bufferedImage = ImageIO.read(file)
       val multiply = width.toDouble() / bufferedImage.width

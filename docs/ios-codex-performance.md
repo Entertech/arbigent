@@ -25,17 +25,25 @@ Two opposite, actionable findings:
    republish. Android's `input keyevent` + lighter UIAutomator settle is already
    fast.
 
-2. **Model layer: Android is slower, because of image resolution.** Android ships
-   the screenshot at full 1080×2280; iOS resizes to ~375px wide. That is ~9× the
-   pixel area → ~2× the model time, even though Android's *text* prompt is smaller.
-   `ArbigentCanvas.load(file, width = elements.screenWidth, …)` uses
-   `deviceInfo.widthGrid`, which is ~375 (points) on iOS but ~1080 (pixels) on
-   Android (`ArbigentDevice.kt:194`). Because arbigent already uses set-of-marks
-   (numbered element boxes + `ClickWithIndex` returns an *index*, not pixel
-   coordinates), high-res pixels are not needed for grounding. *General lever:* cap
-   the annotated image long-edge (e.g. 768–1024px) before sending to the model,
-   and scale `ClickAtCoordinates` (the only coordinate-dependent action) back to
-   device space. This is platform-independent but mostly recovers the Android gap.
+2. **Model layer: Android was slower, but NOT because of image resolution
+   (tested).** Android initially shipped the screenshot at full 1080×2280 vs iOS
+   ~375px. Hypothesis was that ~9× the pixels caused the ~2× model time. A
+   controlled re-run **refuted this**: capping the annotated image to 485×1024
+   (`ARBIGENT_MODEL_IMAGE_MAX_LONG_EDGE`) left Codex time essentially unchanged
+   (44.9s vs 48.6s avg) and the task still succeeded. So with `gpt-5.5` the model
+   time is dominated by **reasoning over the screen content** (which differs by
+   app/task — the iOS runs were App Store/Music/闲鱼, the Android run was
+   Settings), not by image prefill. The "Android 2× iOS" figure is a
+   task-content confound, not a platform or resolution effect.
+
+   **Implication:** image downscaling is a *token/cost* reduction now, and a
+   *latency prerequisite* for later — once a fast model replaces `gpt-5.5` (the
+   real lever), image prefill + non-model settle become the bottleneck, so the cap
+   matters then. arbigent already uses set-of-marks (numbered boxes +
+   `ClickWithIndex` returns an *index*, not pixel coordinates) and
+   `ClickAtCoordinates` is opt-in/off by default, so the cap is safe for the
+   default action set. Implemented: `ArbigentCanvas.save` caps the long edge
+   (default 1024, env-overridable; iOS already under it → unchanged).
 
 > Device selection: to target one Android among several attached, set
 > `ANDROID_SERIAL` (or `ARBIGENT_ANDROID_DEVICE_ID`) to its `ro.serialno`. Without
