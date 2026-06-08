@@ -20,10 +20,18 @@ Two opposite, actionable findings:
    `IOSDriver.kt:597`, **not env-configurable**) and, if the screen never reports
    static, a ~2s fallback that polls the full view hierarchy 10× at 200ms. Pages
    with any persistent animation/live content pay the full ~5s every action.
-   *iOS-specific lever:* lower the settle timeout (~800–1500ms) and shorten the
-   fallback — requires a change in the looktech Maestro fork (`IOSDriver`), then a
-   republish. Android's `input keyevent` + lighter UIAutomator settle is already
-   fast.
+   *iOS-specific lever (delivered, modest):* the settle timeout is now configurable
+   via `MAESTRO_IOS_SCREEN_SETTLE_TIMEOUT_MS` (Maestro `looktech.3`, default 3000
+   unchanged). **Measured:** dropping it to 1200ms cut the action→screenshot gap
+   only ~7s→~6s — so on these screens the 3000ms cap was *not* fully consumed (the
+   screen went static earlier) and the ~6s floor is dominated by the XCTest
+   tap/screenshot/view-hierarchy round-trips, not the settle. The knob helps most
+   on screens that never report static (persistent animation/video — e.g. Apple
+   Music, the originally-documented case). Cutting the floor further means speeding
+   the XCTest I/O itself (harder). Android's `input keyevent` + lighter UIAutomator
+   settle is inherently faster (~3s).
+   Also delivered in `looktech.3`: iOS `backPress()` now performs the left-edge
+   back-swipe (was a silent no-op — see the back-nav comparison below).
 
 2. **Model layer: Android was slower, but NOT because of image resolution
    (tested).** Android initially shipped the screenshot at full 1080×2280 vs iOS
