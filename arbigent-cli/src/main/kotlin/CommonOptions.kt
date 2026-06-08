@@ -135,6 +135,7 @@ fun createAiProvider(
     is CodexAiConfig -> CodexCliAiProvider(
       codexExecutable = aiType.codexCommand,
       modelName = aiType.codexModelName,
+      reasoningEffort = aiType.codexReasoningEffort,
       profile = aiType.codexProfile,
       sandbox = aiType.codexSandbox,
       approvalPolicy = aiType.codexApprovalPolicy,

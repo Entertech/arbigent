@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 public class CodexCliAiProvider(
   private val codexExecutable: String = DEFAULT_CODEX_EXECUTABLE,
   private val modelName: String? = null,
+  private val reasoningEffort: String? = DEFAULT_REASONING_EFFORT,
   private val profile: String? = null,
   private val sandbox: String = DEFAULT_SANDBOX,
   private val approvalPolicy: String = DEFAULT_APPROVAL_POLICY,
@@ -46,6 +47,7 @@ public class CodexCliAiProvider(
     return CodexCliAi(
       codexExecutable = codexExecutable,
       modelName = modelName,
+      reasoningEffort = reasoningEffort,
       profile = profile,
       sandbox = sandbox,
       approvalPolicy = approvalPolicy,
@@ -56,6 +58,7 @@ public class CodexCliAiProvider(
 
   public companion object {
     public const val DEFAULT_CODEX_EXECUTABLE: String = "codex"
+    public const val DEFAULT_REASONING_EFFORT: String = "low"
     public const val DEFAULT_SANDBOX: String = "read-only"
     public const val DEFAULT_APPROVAL_POLICY: String = "never"
     public const val DEFAULT_TIMEOUT_MS: Long = 300_000L
@@ -65,6 +68,7 @@ public class CodexCliAiProvider(
 internal class CodexCliAi(
   private val codexExecutable: String,
   private val modelName: String?,
+  private val reasoningEffort: String?,
   private val profile: String?,
   private val sandbox: String,
   private val approvalPolicy: String,
@@ -259,6 +263,7 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
       lastMessageFile = lastMessageFile,
       screenshotFile = screenshotFile,
     )
+    val startedAt = TimeProvider.get().currentTimeMillis()
     val processBuilder = ProcessBuilder(command)
       .redirectErrorStream(true)
       .redirectOutput(ProcessBuilder.Redirect.to(processLogFile))
@@ -271,6 +276,8 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
       writer.newLine()
     }
     val finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+    val finishedAt = TimeProvider.get().currentTimeMillis()
+    val durationMs = finishedAt - startedAt
     if (!finished) {
       process.destroyForcibly()
       throw IllegalStateException("Codex CLI timed out after ${timeoutMs}ms. Log: ${processLogFile.absolutePath}")
@@ -285,6 +292,13 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
       lastMessage = lastMessage,
       outputFile = lastMessageFile.absolutePath,
       logFile = processLogFile.absolutePath,
+      schemaFile = schemaFile.absolutePath,
+      screenshotFile = screenshotFile.absolutePath,
+      startedAt = startedAt,
+      finishedAt = finishedAt,
+      durationMs = durationMs,
+      modelName = modelName,
+      reasoningEffort = reasoningEffort,
     )
     apiCallJsonLFile.writeText(json.encodeToString(response).removeConfidentialInfo())
     if (exitCode != 0) {
@@ -293,6 +307,7 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
     if (lastMessage.isBlank()) {
       throw IllegalStateException("Codex CLI did not write a final response. Log: ${processLogFile.absolutePath}")
     }
+    arbigentInfoLog("Codex CLI decision completed in ${durationMs}ms (reasoningEffort=${reasoningEffort ?: "default"})")
     return response
   }
 
@@ -313,6 +328,10 @@ Do not call tools, inspect the local repository, edit files, or ask follow-up qu
       add(sandbox)
       add("-c")
       add("approval_policy=${tomlString(approvalPolicy)}")
+      reasoningEffort?.takeIf { it.isNotBlank() }?.let {
+        add("-c")
+        add("model_reasoning_effort=${tomlString(it)}")
+      }
       add("--color")
       add("never")
       modelName?.takeIf { it.isNotBlank() }?.let {
@@ -366,6 +385,13 @@ internal data class CodexCliResponse(
   val lastMessage: String,
   val outputFile: String,
   val logFile: String,
+  val schemaFile: String,
+  val screenshotFile: String,
+  val startedAt: Long,
+  val finishedAt: Long,
+  val durationMs: Long,
+  val modelName: String?,
+  val reasoningEffort: String?,
 )
 
 private fun kotlinx.serialization.json.JsonArrayBuilder.addString(value: String) {

@@ -78,11 +78,12 @@ arbigent-cli/build/install/arbigent/bin/arbigent run task \
   --max-retry=1 \
   --log-level=debug \
   --log-file=/tmp/arbigent-apple-music-ado.log \
+  --codex-reasoning-effort=low \
   --codex-timeout-ms=600000 \
   "In Apple Music, play Ado's top songs second song"
 ```
 
-Expected result: `arbigent-result/result.yml` reports `isSuccess: true`, with the final step showing Ado's second top song playing in Apple Music.
+Expected result: `arbigent-result/result.yml` reports `isSuccess: true`, `arbigent-result/summary.txt` prints `Arbigent execution result: SUCCESS`, and the final step shows Ado's second top song playing in Apple Music.
 
 ## Internal Mirror Experiment
 

@@ -25,6 +25,7 @@ class CodexCliAiTest {
 #!/bin/sh
 out=""
 schema=""
+reasoning_effort=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output-last-message" ]; then
     shift
@@ -32,10 +33,16 @@ while [ "$#" -gt 0 ]; do
   elif [ "$1" = "--output-schema" ]; then
     shift
     schema="$1"
+  elif [ "$1" = "-c" ]; then
+    shift
+    if [ "$1" = "model_reasoning_effort=\"low\"" ]; then
+      reasoning_effort="$1"
+    fi
   fi
   shift
 done
 grep -q '"arguments":{"type":"string"' "${'$'}schema" || exit 7
+[ -n "${'$'}reasoning_effort" ] || exit 8
 cat >/dev/null
 printf '%s' '{"action":"ClickAtCoordinates","text":"12,34","arguments":"{}","arbigent-memo":"tap visible target","arbigent-image-description":"test screen"}' > "${'$'}out"
 exit 0
@@ -52,6 +59,7 @@ exit 0
     val ai = CodexCliAi(
       codexExecutable = codexScript.absolutePath,
       modelName = null,
+      reasoningEffort = CodexCliAiProvider.DEFAULT_REASONING_EFFORT,
       profile = null,
       sandbox = CodexCliAiProvider.DEFAULT_SANDBOX,
       approvalPolicy = CodexCliAiProvider.DEFAULT_APPROVAL_POLICY,

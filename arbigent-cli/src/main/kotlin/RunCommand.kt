@@ -225,6 +225,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
         logResultsLocation(resultFile, resultDir)
 
         arbigentProject.executeScenarios(scenarios)
+        saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
         delay(100)
         
         if (arbigentProject.isScenariosSuccessful(scenarios)) {
@@ -308,6 +309,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       
       // Final status log
       logFinalScenarioStatus(arbigentProject, scenarios)
+      saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
       
       if (arbigentProject.isScenariosSuccessful(scenarios)) {
         val scenarioNames = scenarios.map { it.id }
@@ -557,6 +559,7 @@ fun logResultsLocation(resultFile: File, resultDir: File) {
   arbigentInfoLog("  • Screenshots: ${ArbigentFiles.screenshotsDir.absolutePath}/")
   arbigentInfoLog("  • API Logs: ${ArbigentFiles.jsonlsDir.absolutePath}/")
   arbigentInfoLog("  • HTML Report: ${File(resultDir, "report.html").absolutePath}")
+  arbigentInfoLog("  • Summary: ${File(resultDir, "summary.txt").absolutePath}")
 }
 
 fun logResultsAvailable(resultFile: File, resultDir: File) {
@@ -566,6 +569,7 @@ fun logResultsAvailable(resultFile: File, resultDir: File) {
   arbigentInfoLog("  • Screenshots: ${ArbigentFiles.screenshotsDir.absolutePath}/")
   arbigentInfoLog("  • API Logs: ${ArbigentFiles.jsonlsDir.absolutePath}/")
   arbigentInfoLog("  • HTML Report: ${File(resultDir, "report.html").absolutePath}")
+  arbigentInfoLog("  • Summary: ${File(resultDir, "summary.txt").absolutePath}")
 }
 
 @Composable

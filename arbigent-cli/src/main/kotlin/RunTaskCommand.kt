@@ -121,6 +121,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
         logResultsLocation(resultFile, resultDir)
 
         arbigentProject.executeScenarios(scenarios)
+        saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
         delay(100)
 
         if (arbigentProject.isScenariosSuccessful(scenarios)) {
@@ -162,6 +163,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
       logResultsLocation(resultFile, resultDir)
 
       arbigentProject.executeScenarios(scenarios)
+      saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
 
       if (arbigentProject.isScenariosSuccessful(scenarios)) {
         arbigentInfoLog("All scenarios completed successfully")

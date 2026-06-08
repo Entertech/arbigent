@@ -171,6 +171,7 @@ scenarios:
     assertContains(test.output, "--max-retry")
     assertContains(test.output, "--ai-type")
     assertContains(test.output, "codex")
+    assertContains(test.output, "--codex-reasoning-effort")
     assertContains(test.output, "--os")
   }
 

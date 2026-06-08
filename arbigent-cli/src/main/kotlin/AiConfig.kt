@@ -49,6 +49,11 @@ class CodexAiConfig : AiConfig("Options for Codex CLI AI") {
     envvar = "ARBIGENT_CODEX_MODEL",
     help = "Codex model name. If omitted, Codex CLI uses its configured default."
   )
+  val codexReasoningEffort by defaultOption(
+    "--codex-reasoning-effort",
+    envvar = "ARBIGENT_CODEX_REASONING_EFFORT",
+    help = "Codex model reasoning effort. Defaults to ${CodexCliAiProvider.DEFAULT_REASONING_EFFORT} so Arbigent does not inherit a slow global Codex setting."
+  ).default(CodexCliAiProvider.DEFAULT_REASONING_EFFORT, CodexCliAiProvider.DEFAULT_REASONING_EFFORT)
   val codexProfile by defaultOption(
     "--codex-profile",
     envvar = "ARBIGENT_CODEX_PROFILE",

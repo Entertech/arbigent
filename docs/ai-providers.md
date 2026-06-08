@@ -35,6 +35,8 @@ This provider supports agent decisions, scenario generation, image assertions, a
 
 It does not use an OpenAI API key option. Authentication and model defaults are handled by the local Codex CLI configuration. Arbigent invokes Codex only to decide the next Arbigent action; Arbigent still owns device connection, screenshots, UI tree retrieval, action execution, retries, result files, and reports.
 
+Arbigent explicitly sets `model_reasoning_effort` for Codex CLI decisions. The default is `low`, because mobile UI loops make many small decisions and should not inherit a slow global Codex setting such as `xhigh`. Use `--codex-reasoning-effort=medium|high|xhigh` only when a task needs deeper reasoning and the extra latency is acceptable.
+
 Example:
 
 ```bash
@@ -42,6 +44,8 @@ arbigent run task \
   --os=ios \
   --ai-type=codex \
   --codex-model-name=gpt-5.5 \
+  --codex-reasoning-effort=low \
+  --max-step=20 \
   "In Apple Music, play Ado's second top song"
 ```
 
@@ -50,11 +54,23 @@ Optional environment variables:
 ```bash
 export ARBIGENT_CODEX_COMMAND=codex
 export ARBIGENT_CODEX_MODEL=gpt-5.5
+export ARBIGENT_CODEX_REASONING_EFFORT=low
 export ARBIGENT_CODEX_PROFILE=default
 export ARBIGENT_CODEX_SANDBOX=read-only
 export ARBIGENT_CODEX_APPROVAL_POLICY=never
 export ARBIGENT_CODEX_TIMEOUT_MS=300000
 ```
+
+Each Codex decision writes `durationMs`, timestamps, model, reasoning effort, screenshot path, schema path, process log path, and final JSON response into the step API log under `arbigent-result/jsonls/`. The CLI also writes `arbigent-result/summary.txt` and prints a final `SUCCESS` or `FAILED` conclusion with step counts, duration, last action, and result paths.
+
+Performance notes:
+
+- A Codex CLI step starts a local `codex exec` process and performs one vision decision. This is convenient because it reuses local Codex authentication, but it is slower than a long-lived direct API adapter.
+- iOS real-device runs also spend time capturing a screenshot, fetching the XCTest view hierarchy, drawing element annotations, and building the prompt.
+- When a task is close to completion but hits `--max-step`, Arbigent retries from the current device state. For long App Store or media browsing tasks, prefer a higher limit such as `--max-step=20` before increasing retries.
+- If a workflow must consistently hit low single-digit seconds per step, use an OpenAI-compatible HTTP provider or add a dedicated direct API provider instead of routing every decision through Codex CLI.
+
+See `docs/ios-codex-performance.md` for the iPhone 12 mini App Store task timing breakdown and provider-switch threshold.
 
 Current Codex capabilities:
 
