@@ -1,5 +1,18 @@
 # iOS Codex Task Performance Notes
 
+## Headline: `--codex-direct` is the real fix (~5–8× faster)
+
+The single biggest latency win is **not** session caching, image size, or settle
+timeouts — it is **bypassing the `codex exec` CLI wrapper**. Calling the model
+over direct HTTP (`--codex-direct`, reusing the ChatGPT subscription) cut the
+per-step model decision from **~47s to ~6s** and a 3-step task from **134.6s to
+27.1s** on the same Pixel 4 Settings task. The `codex exec` per-invocation
+overhead (sandbox/plugin/MCP setup + scanning the large repo working dir) was the
+dominant per-step cost, not model inference. See `docs/codex-direct-api.md`. The
+sections below (session cache `off`, image cap, settle) remain valid secondary
+levers and become more relevant the faster the transport gets.
+
+
 ## Android vs iOS device-layer comparison (measured)
 
 Same Codex model (`gpt-5.5` @ low, `off` mode) on iPhone 12 mini vs Pixel 4

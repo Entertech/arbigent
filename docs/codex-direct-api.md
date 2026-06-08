@@ -1,12 +1,36 @@
-# Direct-API Codex provider (design / decision pending)
+# Direct-API Codex provider (implemented: `--codex-direct`)
 
-Goal: replace the per-step `codex exec` **process spawn** with a persistent
-**direct HTTP** call, removing ~1–3s/step of CLI startup and enabling
-**prompt caching**, while keeping the existing `ArbigentAiProvider` boundary so
-OpenAI/Codex/Gemini paths are untouched.
+Replaces the per-step `codex exec` **process spawn** with a direct **HTTP** call,
+reusing the local ChatGPT subscription (Option A below), while keeping the
+existing `ArbigentAiProvider` boundary so OpenAI/Codex/Gemini paths are untouched.
 
-This is a **design doc pending approval** — see the ToS/security note before
-implementing the subscription path.
+## Measured result (the headline win)
+
+Same task (Pixel 4, Settings Wi-Fi, `gpt-5.5` @ low):
+
+| | codex CLI (`off`) | `--codex-direct` |
+|---|---|---|
+| model decision / step | **~47s** | **~6s** |
+| total task (3 steps) | 134.6s | **27.1s** |
+| result | SUCCESS | SUCCESS |
+
+**~5–8× faster.** The surprise: the per-step bottleneck was **not** model
+inference — it was the `codex exec` CLI wrapper's per-invocation overhead
+(sandbox bring-up, plugin/MCP setup, and especially scanning the large repo
+working directory on every call). The direct API call exposes the true model
+decision time (~6s). This dwarfs the earlier session-cache / image-cap / settle
+levers and is the real fix. Enable with `--ai-type=codex --codex-direct`.
+
+Usage:
+
+```bash
+arbigent run task --os=ios --ai-type=codex --codex-direct \
+  --codex-reasoning-effort=low "..."
+```
+
+Implemented in `CodexResponsesAiProvider` + `CodexChatGptAuth`; wired via
+`--codex-direct` (env `ARBIGENT_CODEX_DIRECT`). See the ToS/security note under
+Option A.
 
 ## Why
 
