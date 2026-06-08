@@ -108,6 +108,7 @@ index:element
 
 <INSTRUCTIONS>
 Based on the above, decide on the next action to achieve the goal. Please ensure not to repeat the same action.
+Only use GoalAchieved when the current screen or previous steps prove every explicit constraint in the goal, not just the broad screen type. Verify named entities, source/context, ordinal/count requirements, and requested target/content, and cite that evidence in the memo before finishing.
 </INSTRUCTIONS>
 """.trimIndent(), result)
     }

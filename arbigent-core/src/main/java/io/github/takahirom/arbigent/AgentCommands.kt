@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 import maestro.KeyCode
 import maestro.MaestroException
+import maestro.SwipeDirection
 import maestro.orchestra.*
 
 @Serializable
@@ -591,6 +592,41 @@ public class ScrollAgentAction : ArbigentAgentAction {
 }
 
 @Serializable
+public data class SwipeAgentAction(val direction: SwipeDirection) : ArbigentAgentAction {
+  override val actionName: String = Companion.actionName
+
+  override fun stepLogText(): String {
+    return "Swipe: ${direction.name}"
+  }
+
+  override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
+    runInput.device.executeActions(
+      actions = listOf(
+        MaestroCommand(
+          swipeCommand = SwipeCommand(direction = direction)
+        )
+      ),
+    )
+  }
+
+  public companion object : AgentActionType {
+    override val actionName: String = "Swipe"
+
+    override fun actionDescription(): String =
+      "Swipe in a direction. Use UP to move further down a scrollable page; use DOWN to move back up after overscrolling."
+
+    override fun arguments(): List<AgentActionType.Argument> =
+      listOf(
+        AgentActionType.Argument(
+          name = "text",
+          type = "string",
+          description = "Swipe direction: UP, DOWN, LEFT, or RIGHT. Prefer Swipe DOWN when content was overscrolled past the target; prefer Swipe UP to reveal lower content."
+        )
+      )
+  }
+}
+
+@Serializable
 public data class KeyPressAgentAction(val keyName: String) : ArbigentAgentAction {
   override val actionName: String = "KeyPress"
 
@@ -671,7 +707,7 @@ public class GoalAchievedAgentAction : ArbigentAgentAction {
     override val actionName: String = "GoalAchieved"
 
     override fun actionDescription(): String =
-      "Indicate that the goal has been achieved and the test scenario is complete"
+      "Indicate that the goal has been achieved only after every specific goal constraint has visible or previously recorded evidence"
 
     override fun arguments(): List<AgentActionType.Argument> = emptyList()
   }

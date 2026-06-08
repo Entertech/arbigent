@@ -37,6 +37,7 @@ public class ArbigentAgent(
   private val prompt = agentConfig.prompt
   private val aiOptions = agentConfig.aiOptions
   private val appSettings = agentConfig.appSettings
+  private val goalCompletionVerifier = agentConfig.goalCompletionVerifier
 
   private val executeInterceptors: List<ArbigentExecutionInterceptor> = interceptors
     .filterIsInstance<ArbigentExecutionInterceptor>()
@@ -232,6 +233,7 @@ public class ArbigentAgent(
       decisionChain = decisionChain,
       imageAssertionChain = imageAssertionChain,
       executeActionChain = executeActionChain,
+      goalCompletionVerifier = goalCompletionVerifier,
       mcpClient = mcpClient,
       mcpOptions = mcpOptions,
     )
@@ -263,6 +265,7 @@ public class ArbigentAgent(
     val decisionChain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput,
     val imageAssertionChain: (ArbigentAi.ImageAssertionInput) -> ArbigentAi.ImageAssertionOutput,
     val executeActionChain: suspend (ExecuteActionsInput) -> ExecuteActionsOutput,
+    val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
     val mcpClient: MCPClient? = null,
     val mcpOptions: ArbigentMcpOptions? = null,
   )
@@ -282,6 +285,7 @@ public class ArbigentAgent(
     val decisionChain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput,
     val imageAssertionChain: (ArbigentAi.ImageAssertionInput) -> ArbigentAi.ImageAssertionOutput,
     val executeActionChain: suspend (ExecuteActionsInput) -> ExecuteActionsOutput,
+    val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
     val prompt: ArbigentPrompt,
     val aiOptions: ArbigentAiOptions?,
     val cacheOptions: ArbigentScenarioCacheOptions = ArbigentScenarioCacheOptions(),
@@ -340,6 +344,7 @@ public class AgentConfig(
   internal val prompt: ArbigentPrompt,
   internal val aiOptions: ArbigentAiOptions?,
   internal val appSettings: ArbigentAppSettings?,
+  internal val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
 ) {
   public class Builder {
     private val interceptors = mutableListOf<ArbigentInterceptor>()
@@ -351,6 +356,8 @@ public class AgentConfig(
     private var aiOptions: ArbigentAiOptions? = null
     private var mcpClient: MCPClient? = null
     private var appSettings: ArbigentAppSettings? = null
+    private var goalCompletionVerifier: ArbigentGoalCompletionVerifier =
+      AcceptingArbigentGoalCompletionVerifier
 
     public fun addInterceptor(interceptor: ArbigentInterceptor) {
       interceptors.add(0, interceptor)
@@ -384,6 +391,10 @@ public class AgentConfig(
       this.appSettings = appSettings
     }
 
+    public fun goalCompletionVerifier(goalCompletionVerifier: ArbigentGoalCompletionVerifier) {
+      this.goalCompletionVerifier = goalCompletionVerifier
+    }
+
     public fun build(): AgentConfig {
       return AgentConfig(
         interceptors = interceptors,
@@ -393,6 +404,7 @@ public class AgentConfig(
         prompt = prompt,
         aiOptions = aiOptions,
         appSettings = appSettings,
+        goalCompletionVerifier = goalCompletionVerifier,
       )
     }
   }
@@ -406,6 +418,7 @@ public class AgentConfig(
     builder.aiFactory(aiFactory)
     builder.aiOptions(aiOptions)
     builder.appSettings(appSettings)
+    builder.goalCompletionVerifier(goalCompletionVerifier)
     return builder
   }
 }
@@ -556,11 +569,13 @@ public fun AgentConfigBuilder(
   mcpClient: MCPClient? = null,
   fixedScenarios: List<FixedScenario> = emptyList(),
   appSettings: ArbigentAppSettings? = null,
+  goalCompletionVerifier: ArbigentGoalCompletionVerifier = AcceptingArbigentGoalCompletionVerifier,
 ): AgentConfig.Builder = AgentConfigBuilder {
   deviceFormFactor(deviceFormFactor)
   prompt(prompt)
   mcpClient(mcpClient)
   appSettings(appSettings)
+  goalCompletionVerifier(goalCompletionVerifier)
   // Add basic decision interceptor
   addInterceptor(object : ArbigentDecisionInterceptor {
     override suspend fun intercept(
@@ -885,6 +900,7 @@ public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
     BackPressAgentAction,
     KeyPressAgentAction,
     ScrollAgentAction,
+    SwipeAgentAction,
     WaitAgentAction,
     GoalAchievedAgentAction,
     FailedAgentAction,
@@ -917,6 +933,7 @@ private fun getAgentActionTypeByName(actionName: String): AgentActionType? {
   return when (actionName) {
     "ClickWithText" -> ClickWithTextAgentAction
     "ClickAtCoordinates" -> ClickAtCoordinates
+    "Swipe" -> SwipeAgentAction
     else -> null
   }
 }
@@ -1086,6 +1103,7 @@ private suspend fun executeDefault(input: ExecuteInput): ExecutionResult {
         decisionChain = input.decisionChain,
         imageAssertionChain = input.imageAssertionChain,
         executeActionChain = input.executeActionChain,
+        goalCompletionVerifier = input.goalCompletionVerifier,
         prompt = input.prompt,
         aiOptions = input.aiOptions,
         cacheOptions = input.cacheOptions,
@@ -1160,7 +1178,7 @@ private suspend fun step(
   val uiTreeStrings = device.viewTreeString()
   val uiTreeHash = uiTreeStrings.optimizedTreeString.hashCode().toString().replace("-", "")
   val contextHash = contextHolder.context(aiOptions).hashCode().toString().replace("-", "")
-  val cacheKey = "v${BuildConfig.VERSION_NAME}-uitree-${uiTreeHash}-context-${contextHash}"
+  val cacheKey = "v${BuildConfig.VERSION_NAME}-decision-r2-uitree-${uiTreeHash}-context-${contextHash}"
   arbigentInfoLog("cacheKey: $cacheKey")
   val originalScreenshotFilePath =
     ArbigentFiles.screenshotsDir.absolutePath + File.separator + "$stepId.png"
@@ -1257,6 +1275,7 @@ private suspend fun step(
     mcpTools = tools
   )
   val decisionOutput = decisionChain(decisionInput)
+  var executableDecisionOutput = decisionOutput
   if (decisionOutput.agentActions.any { it is GoalAchievedAgentAction }) {
     val imageAssertionOutput = imageAssertionChain(
       ArbigentAi.ImageAssertionInput(
@@ -1283,8 +1302,14 @@ private suspend fun step(
         it.isPassed
       }) {
       // All assertions are passed
-      contextHolder.addStep(decisionOutput.step)
+      executableDecisionOutput = verifyGoalCompletion(
+        stepInput = stepInput,
+        decisionInput = decisionInput,
+        decisionOutput = decisionOutput,
+      )
+      contextHolder.addStep(executableDecisionOutput.step)
     } else {
+      executableDecisionOutput = decisionOutput.copy(agentActions = emptyList())
       imageAssertionOutput.results.filter { it.isPassed.not() }.forEach {
         contextHolder.addStep(
           ArbigentContextHolder.Step(
@@ -1310,7 +1335,7 @@ private suspend fun step(
   executeActionChain(
     ExecuteActionsInput(
       stepId = stepId,
-      decisionOutput = decisionOutput,
+      decisionOutput = executableDecisionOutput,
       elements = elements,
       arbigentContextHolder = contextHolder,
       screenshotFilePath = screenshotFilePath,
@@ -1320,4 +1345,43 @@ private suspend fun step(
     )
   )
   return StepResult.Continue
+}
+
+private suspend fun verifyGoalCompletion(
+  stepInput: StepInput,
+  decisionInput: ArbigentAi.DecisionInput,
+  decisionOutput: ArbigentAi.DecisionOutput,
+): ArbigentAi.DecisionOutput {
+  if (decisionOutput.step.agentAction !is GoalAchievedAgentAction) {
+    return decisionOutput
+  }
+  val verificationResult = try {
+    stepInput.goalCompletionVerifier.verify(
+      ArbigentGoalCompletionVerificationInput(
+        goal = decisionInput.contextHolder.goal,
+        maxStep = decisionInput.contextHolder.maxStep,
+        currentStep = decisionInput.contextHolder.countMeaningfulActions() + 1,
+        decisionInput = decisionInput,
+        decisionOutput = decisionOutput,
+        previousSteps = decisionInput.contextHolder.steps(),
+      )
+    )
+  } catch (e: Exception) {
+    ArbigentGoalCompletionVerificationResult.Rejected(
+      "Goal completion verifier failed: ${e.message ?: e::class.simpleName}"
+    )
+  }
+  return when (verificationResult) {
+    ArbigentGoalCompletionVerificationResult.Accepted -> decisionOutput
+    is ArbigentGoalCompletionVerificationResult.Rejected -> {
+      decisionOutput.copy(
+        agentActions = emptyList(),
+        step = decisionOutput.step.copy(
+          agentAction = null,
+          action = null,
+          feedback = "Rejected GoalAchieved: ${verificationResult.reason}",
+        )
+      )
+    }
+  }
 }

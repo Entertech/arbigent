@@ -37,6 +37,8 @@ It does not use an OpenAI API key option. Authentication and model defaults are 
 
 Arbigent explicitly sets `model_reasoning_effort` for Codex CLI decisions. The default is `low`, because mobile UI loops make many small decisions and should not inherit a slow global Codex setting such as `xhigh`. Use `--codex-reasoning-effort=medium|high|xhigh` only when a task needs deeper reasoning and the extra latency is acceptable.
 
+Codex is not responsible for deciding whether Arbigent should trust a completed task. It returns a structured action like any other provider. `GoalAchieved` acceptance is handled in the core agent loop through `ArbigentGoalCompletionVerifier`, after image assertions and before the step is recorded as successful.
+
 Example:
 
 ```bash
@@ -75,6 +77,8 @@ Performance notes:
 - With `--codex-session-cache=auto`, each step still starts a local Codex CLI process, but Arbigent resumes the same Codex session so the model can reuse conversation history and the prompt can avoid resending full step history. This is convenient because it reuses local Codex authentication, but it is still slower than a long-lived direct API adapter.
 - iOS real-device runs also spend time capturing a screenshot, fetching the XCTest view hierarchy, drawing element annotations, and building the prompt.
 - When a task is close to completion but hits `--max-step`, Arbigent retries from the current device state. For long App Store or media browsing tasks, prefer a higher limit such as `--max-step=20` before increasing retries.
+- Do not treat `Decision cache: 0/N hits` as proof that Codex session caching failed. The decision cache is a replay cache keyed by UI tree plus prompt/history context, while Codex session caching is reported separately as `Codex session: mode=..., resumed=..., schema=...`.
+- The default visual action set includes `Swipe` in addition to `Scroll`. Use `Swipe DOWN` to move back up after overscrolling and `Swipe UP` to reveal lower content; this avoids multi-step recovery when a target is only partially visible near the top or bottom edge.
 - If a workflow must consistently hit low single-digit seconds per step, use an OpenAI-compatible HTTP provider or add a dedicated direct API provider instead of routing every decision through Codex CLI.
 
 See `docs/ios-codex-performance.md` for the iPhone 12 mini App Store task timing breakdown and provider-switch threshold.
@@ -114,3 +118,9 @@ Codex returns one structured action:
 ```
 
 OpenAI function-call responses and Codex JSON responses both go through the shared `AgentActionJsonParser`, so provider-specific response formats do not fork Arbigent action semantics.
+
+## Goal Completion
+
+Completion validation is provider-agnostic. When any provider returns `GoalAchieved`, the core executor runs the configured `ArbigentGoalCompletionVerifier` before marking the task successful.
+
+The default verifier accepts the provider decision for backward compatibility. Stricter runners can install a verifier that checks current UI evidence, screenshot-derived evidence, previous steps, or another model-backed judgment. A rejected completion is recorded as a feedback step and the agent continues instead of returning a false success.

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import maestro.SwipeDirection
 
 internal object AgentActionJsonParser {
   private val json = Json {
@@ -137,6 +138,13 @@ internal object AgentActionJsonParser {
       }
 
       ScrollAgentAction -> ScrollAgentAction()
+
+      SwipeAgentAction -> {
+        val text = textArgument(argumentsJsonData)
+        val direction = SwipeDirection.values().firstOrNull { it.name.equals(text.trim(), ignoreCase = true) }
+          ?: throw IllegalArgumentException("text should be UP, DOWN, LEFT, or RIGHT for ${SwipeAgentAction.actionName}")
+        SwipeAgentAction(direction)
+      }
 
       else -> throw IllegalArgumentException("Unsupported action: $action")
     }

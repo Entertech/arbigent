@@ -11,7 +11,26 @@ Command:
   "去应用商店找米哈游的第二个热门的游戏,查看第二条评论"
 ```
 
-Observed result from `arbigent-result/result.yml`: success. The final successful history reached the App Store review page for `原神·空月之歌` and selected `Goal achieved` when the second review was visible.
+Older `arbigent-result/result.yml` artifacts can report success even when the final visual evidence is too weak. Treat `GoalAchieved` as valid only when the current screen or recorded steps prove every explicit goal constraint.
+
+## Recent iPhone 12 mini Runs
+
+The latest local artifacts showed these App Store task attempts:
+
+- `1780899098399`: failed after 10 steps. It started from Looktech Lab, recovered to App Store through Home/Spotlight, typed `鹰角网络`, and stopped after submitting the search. The run did not reach the search results before the step limit.
+- `1780900263382`: succeeded after 14 steps and 300.9s. It started from App Store search results, opened `明日方舟：终末地`, reached the full ratings/reviews page, and selected `GoalAchieved` when the second review `玩到57级实在玩不下去了` was centered and readable.
+- `1780901671827`: reported `SUCCESS` after 21 steps and 427.5s while recovering from the wrong `鹰角网络` context into a `米哈游` search. The final summary said the requested second review was only exposed at the bottom of the screen, so this should be treated as insufficient completion evidence even though the result file says success.
+
+The successful run still took too long:
+
+- Codex CLI decision time: 202.6s total, 14.5s average, 49.1s max.
+- Non-model time, including screenshot capture, XCTest hierarchy, annotation, action execution, and waits: about 98.3s.
+- Codex session cache was active: `mode=auto`, `resumed=13/14`, `schema=14/14` on local `codex-cli 0.137.0`.
+- Arbigent decision cache was `0/14` hits. This is expected for a live exploratory path because the cache key includes the current UI tree and the prompt/history context hash. It is mainly a replay/retry cache, not a per-run model-context cache.
+
+The main quality issue in this run was action strategy, not iOS input failure: the agent tapped a second review title while it was partially visible near the bottom edge, hit the App Store tab bar, and spent multiple steps recovering. The default action set now includes `Swipe`, and the shared prompt tells the model to center partially visible edge targets before tapping.
+
+Completion acceptance now has a provider-agnostic hook in core: `ArbigentGoalCompletionVerifier`. Codex remains a decision provider only; strict completion evidence should be enforced through this core verifier or scenario image assertions, not through Codex-specific guards.
 
 ## Timing Breakdown
 
@@ -67,13 +86,18 @@ Codex session caching is enabled by default with:
 --codex-session-cache=auto
 ```
 
-In this mode, the first Arbigent step creates a persisted Codex exec session. Later steps run `codex exec resume` and send an incremental prompt containing the current UI state plus the last recorded step, relying on the resumed Codex session for earlier context. This avoids repeatedly sending the full step history through a fresh Codex session.
+In this mode, the first Arbigent step creates a persisted Codex exec session. Later steps run `codex exec resume` and send an incremental prompt containing the current UI state plus the last recorded step, relying on the resumed Codex session for earlier context. This avoids repeatedly sending the full step history through a fresh Codex session. It does not remove the local process-start cost for each `codex exec` turn.
 
-The local `codex-cli 0.130.0` supports `codex exec --output-schema`, but its `codex exec resume --help` does not expose `--output-schema`. For that version, `auto` resumes without CLI schema enforcement and lets Arbigent's in-process parser validate the returned action. Use this stricter mode if that tradeoff is not acceptable:
+Local `codex-cli 0.137.0` supports `codex exec resume --output-schema`, so `auto` keeps CLI schema enforcement on resumed turns. Older Codex CLI builds that lack resume schema support can still run `auto`; Arbigent then validates the returned JSON action in-process. Use this stricter mode if schema enforcement on every turn is required:
 
 ```bash
 --codex-session-cache=schema-only
 ```
+
+`summary.txt` now separates the two cache layers:
+
+- `Decision cache`: Arbigent's replay cache keyed by UI tree plus prompt/history context.
+- `Codex session`: Codex CLI session resume state, including resumed-turn count and schema-enforced count.
 
 ## When to Switch Providers
 

@@ -216,6 +216,8 @@ Set "arguments" to "{}" unless selecting an MCP action.
 For MCP actions, put tool arguments in "arguments" as a compact JSON object string and keep "text" empty.
 Use ClickWithIndex when a visible target exists in ELEMENTS.
 Use ClickAtCoordinates only when the target is visible in the screenshot but missing from ELEMENTS/UI hierarchy.
+If a visible target is only partially visible or close to a screen edge, navigation bar, or tab bar, use Scroll or Swipe to center it before clicking.
+Before choosing GoalAchieved, verify every explicit constraint in GOAL and write the evidence in arbigent-memo. If the current screen is a plausible but unverified leftover from a previous task, continue navigating instead of finishing.
 Do not call tools, inspect the local repository, edit files, or ask follow-up questions.
 </OUTPUT_CONTRACT>
 """.trimIndent()
@@ -265,6 +267,7 @@ $focusedTreeText
 <INSTRUCTIONS>
 Based on the current screen and the cached session history, decide on the next action to achieve the goal.
 Do not repeat actions that the session history already showed as ineffective.
+Only use GoalAchieved when the current screen or earlier session turns prove every explicit goal constraint, not just the broad screen type. Verify named entities, source/context, ordinal/count requirements, and requested target/content, then cite that evidence in the memo before finishing.
 </INSTRUCTIONS>
 """.trimIndent()
   }
@@ -549,6 +552,7 @@ Do not repeat actions that the session history already showed as ineffective.
       }
     }
   }
+
 }
 
 private data class CodexProcessResult(

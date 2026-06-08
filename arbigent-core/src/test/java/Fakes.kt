@@ -127,6 +127,12 @@ class FakeAi : ArbigentAi {
       }
     }
 
+    class GoalAchieved : Status() {
+      override fun decideAgentActions(decisionInput: ArbigentAi.DecisionInput): ArbigentAi.DecisionOutput {
+        return createDecisionOutput(agentAction = GoalAchievedAgentAction())
+      }
+    }
+
     protected fun createDecisionOutput(
       agentAction: ArbigentAgentAction = ClickWithTextAgentAction("text")
     ): ArbigentAi.DecisionOutput {

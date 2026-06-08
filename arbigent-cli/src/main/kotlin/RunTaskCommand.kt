@@ -16,7 +16,9 @@ import com.jakewharton.mosaic.ui.Color.Companion.White
 import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Text
 import io.github.takahirom.arbigent.*
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -86,12 +88,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
       Runtime.getRuntime().addShutdownHook(object : Thread() {
         override fun run() {
           arbigentProject.cancel()
-          ArbigentProjectSerializer().save(arbigentProject.getResult(scenarios), resultFile)
-          ArbigentHtmlReport().saveReportHtml(
-            resultDir.absolutePath,
-            arbigentProject.getResult(scenarios),
-            needCopy = false
-          )
+          saveExecutionSnapshot(arbigentProject, scenarios, resultFile, resultDir)
           if (!device.isClosed()) device.close()
         }
       })
@@ -120,7 +117,12 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
       LaunchedEffect(Unit) {
         logResultsLocation(resultFile, resultDir)
 
-        arbigentProject.executeScenarios(scenarios)
+        val snapshotJob = launchExecutionSnapshotJob(arbigentProject, scenarios, resultFile, resultDir)
+        try {
+          arbigentProject.executeScenarios(scenarios)
+        } finally {
+          snapshotJob.cancelAndJoin()
+        }
         saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
         delay(100)
 
@@ -162,7 +164,12 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     runBlocking {
       logResultsLocation(resultFile, resultDir)
 
-      arbigentProject.executeScenarios(scenarios)
+      val snapshotJob = launchExecutionSnapshotJob(arbigentProject, scenarios, resultFile, resultDir)
+      try {
+        arbigentProject.executeScenarios(scenarios)
+      } finally {
+        snapshotJob.cancelAndJoin()
+      }
       saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
 
       if (arbigentProject.isScenariosSuccessful(scenarios)) {

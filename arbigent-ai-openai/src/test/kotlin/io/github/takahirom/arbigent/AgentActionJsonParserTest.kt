@@ -2,6 +2,7 @@ package io.github.takahirom.arbigent
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import maestro.SwipeDirection
 import maestro.TreeNode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -76,6 +77,19 @@ class AgentActionJsonParserTest {
     )
 
     assertTrue(action is GoalAchievedAgentAction)
+  }
+
+  @Test
+  fun `parses swipe action direction case-insensitively`() {
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = listOf(SwipeAgentAction),
+      action = "Swipe",
+      argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("down"))),
+      elements = emptyElements(),
+      mcpTools = null,
+    )
+
+    assertEquals(SwipeAgentAction(SwipeDirection.DOWN), action)
   }
 
   private fun emptyElements(): ArbigentElementList = ArbigentElementList(emptyList(), screenWidth = 100)

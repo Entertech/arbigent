@@ -29,6 +29,8 @@ import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Row
 import com.jakewharton.mosaic.ui.Text
 import io.github.takahirom.arbigent.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -191,12 +193,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     Runtime.getRuntime().addShutdownHook(object : Thread() {
       override fun run() {
         arbigentProject.cancel()
-        ArbigentProjectSerializer().save(arbigentProject.getResult(scenarios), resultFile)
-        ArbigentHtmlReport().saveReportHtml(
-          resultDir.absolutePath,
-          arbigentProject.getResult(scenarios),
-          needCopy = false
-        )
+        saveExecutionSnapshot(arbigentProject, scenarios, resultFile, resultDir)
         device?.close()
       }
     })
@@ -224,7 +221,12 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       LaunchedEffect(Unit) {
         logResultsLocation(resultFile, resultDir)
 
-        arbigentProject.executeScenarios(scenarios)
+        val snapshotJob = launchExecutionSnapshotJob(arbigentProject, scenarios, resultFile, resultDir)
+        try {
+          arbigentProject.executeScenarios(scenarios)
+        } finally {
+          snapshotJob.cancelAndJoin()
+        }
         saveAndPrintExecutionSummary(arbigentProject, scenarios, resultFile, resultDir)
         delay(100)
         
@@ -304,8 +306,13 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
         }
       }
       
-      arbigentProject.executeScenarios(scenarios)
-      progressJob.cancel()
+      val snapshotJob = launchExecutionSnapshotJob(arbigentProject, scenarios, resultFile, resultDir)
+      try {
+        arbigentProject.executeScenarios(scenarios)
+      } finally {
+        snapshotJob.cancelAndJoin()
+        progressJob.cancelAndJoin()
+      }
       
       // Final status log
       logFinalScenarioStatus(arbigentProject, scenarios)
@@ -549,6 +556,31 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     }
     
     arbigentInfoLog("")
+  }
+}
+
+fun saveExecutionSnapshot(
+  arbigentProject: ArbigentProject,
+  scenarios: List<ArbigentScenario>,
+  resultFile: File,
+  resultDir: File,
+) {
+  try {
+    saveExecutionArtifacts(arbigentProject, scenarios, resultFile, resultDir, printSummary = false)
+  } catch (e: Exception) {
+    arbigentWarnLog("Failed to save execution snapshot: ${e.message}")
+  }
+}
+
+fun kotlinx.coroutines.CoroutineScope.launchExecutionSnapshotJob(
+  arbigentProject: ArbigentProject,
+  scenarios: List<ArbigentScenario>,
+  resultFile: File,
+  resultDir: File,
+): Job = launch {
+  while (true) {
+    delay(15_000)
+    saveExecutionSnapshot(arbigentProject, scenarios, resultFile, resultDir)
   }
 }
 

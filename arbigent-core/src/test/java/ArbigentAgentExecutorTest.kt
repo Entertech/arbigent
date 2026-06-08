@@ -31,10 +31,10 @@ class ArbigentAgentExecutorTest {
     val cacheKey = assertNotNull(cacheKeyCapture.capturedCacheKey, "Cache key should not be null")
 
     // Verify essential components are present and in correct order
-    val keyPattern = Regex("v.+?-uitree-[^-]+-context-[^-]+")
+    val keyPattern = Regex("v.+?-decision-r\\d+-uitree-[^-]+-context-[^-]+")
     assertTrue(cacheKey.matches(keyPattern), 
       """
-      Cache key should match pattern: v{version}-uitree-{hash}-context-{hash}
+      Cache key should match pattern: v{version}-decision-r{revision}-uitree-{hash}-context-{hash}
       Actual: $cacheKey
       """.trimIndent())
   }
@@ -53,5 +53,35 @@ class ArbigentAgentExecutorTest {
       .execute(task, MCPClient())
 
     advanceUntilIdle()
+  }
+
+  @OptIn(ExperimentalStdlibApi::class)
+  @Test
+  fun goalCompletionVerifierRejectsProviderGoalAchieved() = runTest {
+    ArbigentCoroutinesDispatcher.dispatcher = coroutineContext[CoroutineDispatcher]!!
+    var verificationCount = 0
+    val testAi = FakeAi().apply {
+      status = FakeAi.Status.GoalAchieved()
+    }
+    val agentConfig = AgentConfig {
+      deviceFactory { FakeDevice() }
+      aiFactory { testAi }
+      goalCompletionVerifier {
+        verificationCount++
+        ArbigentGoalCompletionVerificationResult.Rejected("missing explicit goal evidence")
+      }
+    }
+
+    val task = ArbigentAgentTask("id1", "goal1", agentConfig, maxStep = 1)
+    val agent = ArbigentAgent(agentConfig)
+    agent.execute(task, MCPClient())
+    advanceUntilIdle()
+
+    val lastStep = assertNotNull(agent.latestArbigentContext()?.steps()?.lastOrNull())
+    assertEquals(1, verificationCount)
+    assertFalse(agent.isGoalAchieved())
+    assertNull(lastStep.agentAction)
+    assertTrue(lastStep.feedback.orEmpty().contains("Rejected GoalAchieved"))
+    assertTrue(lastStep.feedback.orEmpty().contains("missing explicit goal evidence"))
   }
 }
