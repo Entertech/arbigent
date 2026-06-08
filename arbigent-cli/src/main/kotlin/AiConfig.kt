@@ -4,6 +4,7 @@ package io.github.takahirom.arbigent.cli
 
 import com.github.ajalt.clikt.parameters.groups.OptionGroup
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.long
 import io.github.takahirom.arbigent.ArbigentInternalApi
@@ -81,4 +82,9 @@ class CodexAiConfig : AiConfig("Options for Codex CLI AI") {
     envvar = "ARBIGENT_CODEX_TIMEOUT_MS",
     help = "Codex decision timeout in milliseconds"
   ).long().default(CodexCliAiProvider.DEFAULT_TIMEOUT_MS)
+  val codexDirect by defaultOption(
+    "--codex-direct",
+    envvar = "ARBIGENT_CODEX_DIRECT",
+    help = "Call the model over direct HTTP using the local ChatGPT subscription (reads ~/.codex/auth.json) instead of spawning the codex CLI per step. Removes the per-step process spawn and enables prompt caching."
+  ).flag(default = false)
 }

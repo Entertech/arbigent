@@ -132,17 +132,25 @@ fun createAiProvider(
       }
     )
 
-    is CodexAiConfig -> CodexCliAiProvider(
-      codexExecutable = aiType.codexCommand,
-      modelName = aiType.codexModelName,
-      reasoningEffort = aiType.codexReasoningEffort,
-      sessionCacheMode = aiType.codexSessionCache,
-      profile = aiType.codexProfile,
-      sandbox = aiType.codexSandbox,
-      approvalPolicy = aiType.codexApprovalPolicy,
-      timeoutMs = aiType.codexTimeoutMs,
-      workingDirectory = workingDirectory,
-    )
+    is CodexAiConfig -> if (aiType.codexDirect) {
+      CodexResponsesAiProvider(
+        modelName = aiType.codexModelName ?: CodexResponsesAiProvider.DEFAULT_MODEL,
+        reasoningEffort = aiType.codexReasoningEffort,
+        timeoutMs = aiType.codexTimeoutMs,
+      )
+    } else {
+      CodexCliAiProvider(
+        codexExecutable = aiType.codexCommand,
+        modelName = aiType.codexModelName,
+        reasoningEffort = aiType.codexReasoningEffort,
+        sessionCacheMode = aiType.codexSessionCache,
+        profile = aiType.codexProfile,
+        sandbox = aiType.codexSandbox,
+        approvalPolicy = aiType.codexApprovalPolicy,
+        timeoutMs = aiType.codexTimeoutMs,
+        workingDirectory = workingDirectory,
+      )
+    }
   }
 }
 
