@@ -8,7 +8,32 @@ import util.LocalSimulatorUtils
 public fun fetchAvailableDevicesByOs(deviceType: ArbigentDeviceOs): List<ArbigentAvailableDevice> {
   return when (deviceType) {
     ArbigentDeviceOs.Android -> {
-      Dadb.list().map { ArbigentAvailableDevice.Android(it) }
+      // Opt-in device targeting: when ANDROID_SERIAL (or ARBIGENT_ANDROID_DEVICE_ID)
+      // is set, select the matching device by `ro.serialno`. dadb's Dadb.list()
+      // does not filter by serial, so without this the CLI's firstOrNull() picks an
+      // arbitrary device when several Androids are attached. Default (env unset)
+      // behavior is unchanged.
+      val requested = (System.getenv("ANDROID_SERIAL")
+        ?: System.getenv("ARBIGENT_ANDROID_DEVICE_ID"))?.takeIf { it.isNotBlank() }
+      val all = Dadb.list()
+      val selected = if (requested == null) {
+        all
+      } else {
+        val matched = all.filter { dadb ->
+          runCatching { dadb.shell("getprop ro.serialno").output.trim() == requested }
+            .getOrDefault(false)
+        }
+        if (matched.isEmpty()) {
+          all.forEach { runCatching { it.close() } }
+          throw IllegalArgumentException(
+            "No connected Android device matches ANDROID_SERIAL/ARBIGENT_ANDROID_DEVICE_ID=$requested " +
+              "(${all.size} device(s) attached)."
+          )
+        }
+        all.filterNot { it in matched }.forEach { runCatching { it.close() } }
+        matched
+      }
+      selected.map { ArbigentAvailableDevice.Android(it) }
     }
 
     ArbigentDeviceOs.Ios -> {

@@ -1,5 +1,46 @@
 # iOS Codex Task Performance Notes
 
+## Android vs iOS device-layer comparison (measured)
+
+Same Codex model (`gpt-5.5` @ low, `off` mode) on iPhone 12 mini vs Pixel 4
+(Android 13) isolates what is device-specific vs model-specific.
+
+| | iOS (App Store, off) | Android (Settings, off) |
+|---|---|---|
+| Codex decision avg | 22.5s | **48.6s** |
+| Screenshot sent to model | ~375px wide | **1080px wide (full res)** |
+| Prompt text | ~10k chars | ~5–6k chars |
+| Non-model gap / step | ~9s (settle ~7s) | **~4.1s (settle ~3s)** |
+
+Two opposite, actionable findings:
+
+1. **Device layer: iOS is slower.** iOS post-action settle is ~7s vs Android ~3s.
+   Maestro's iOS driver does `waitForAppToSettle` → `waitUntilScreenIsStatic(3000)`
+   with `SCREEN_SETTLE_TIMEOUT_MS = 3000` (hardcoded `private const` in
+   `IOSDriver.kt:597`, **not env-configurable**) and, if the screen never reports
+   static, a ~2s fallback that polls the full view hierarchy 10× at 200ms. Pages
+   with any persistent animation/live content pay the full ~5s every action.
+   *iOS-specific lever:* lower the settle timeout (~800–1500ms) and shorten the
+   fallback — requires a change in the looktech Maestro fork (`IOSDriver`), then a
+   republish. Android's `input keyevent` + lighter UIAutomator settle is already
+   fast.
+
+2. **Model layer: Android is slower, because of image resolution.** Android ships
+   the screenshot at full 1080×2280; iOS resizes to ~375px wide. That is ~9× the
+   pixel area → ~2× the model time, even though Android's *text* prompt is smaller.
+   `ArbigentCanvas.load(file, width = elements.screenWidth, …)` uses
+   `deviceInfo.widthGrid`, which is ~375 (points) on iOS but ~1080 (pixels) on
+   Android (`ArbigentDevice.kt:194`). Because arbigent already uses set-of-marks
+   (numbered element boxes + `ClickWithIndex` returns an *index*, not pixel
+   coordinates), high-res pixels are not needed for grounding. *General lever:* cap
+   the annotated image long-edge (e.g. 768–1024px) before sending to the model,
+   and scale `ClickAtCoordinates` (the only coordinate-dependent action) back to
+   device space. This is platform-independent but mostly recovers the Android gap.
+
+> Device selection: to target one Android among several attached, set
+> `ANDROID_SERIAL` (or `ARBIGENT_ANDROID_DEVICE_ID`) to its `ro.serialno`. Without
+> it the CLI picks an arbitrary device.
+
 ## Session cache mode: stateless `off` is the default (measured)
 
 The biggest, most general Codex latency lever is the session cache mode. As of
