@@ -172,6 +172,7 @@ scenarios:
     assertContains(test.output, "--ai-type")
     assertContains(test.output, "codex")
     assertContains(test.output, "--codex-reasoning-effort")
+    assertContains(test.output, "--codex-session-cache")
     assertContains(test.output, "--os")
   }
 

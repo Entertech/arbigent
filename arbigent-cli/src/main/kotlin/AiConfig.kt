@@ -4,6 +4,7 @@ package io.github.takahirom.arbigent.cli
 
 import com.github.ajalt.clikt.parameters.groups.OptionGroup
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.long
 import io.github.takahirom.arbigent.ArbigentInternalApi
 import io.github.takahirom.arbigent.CodexCliAiProvider
@@ -54,6 +55,12 @@ class CodexAiConfig : AiConfig("Options for Codex CLI AI") {
     envvar = "ARBIGENT_CODEX_REASONING_EFFORT",
     help = "Codex model reasoning effort. Defaults to ${CodexCliAiProvider.DEFAULT_REASONING_EFFORT} so Arbigent does not inherit a slow global Codex setting."
   ).default(CodexCliAiProvider.DEFAULT_REASONING_EFFORT, CodexCliAiProvider.DEFAULT_REASONING_EFFORT)
+  val codexSessionCache by defaultOption(
+    "--codex-session-cache",
+    envvar = "ARBIGENT_CODEX_SESSION_CACHE",
+    help = "Codex session cache mode: auto resumes the previous Codex session between Arbigent steps, schema-only resumes only when Codex supports schema on resume, off preserves stateless exec behavior."
+  ).choice("auto", "schema-only", "off")
+    .default(CodexCliAiProvider.DEFAULT_SESSION_CACHE_MODE, CodexCliAiProvider.DEFAULT_SESSION_CACHE_MODE)
   val codexProfile by defaultOption(
     "--codex-profile",
     envvar = "ARBIGENT_CODEX_PROFILE",

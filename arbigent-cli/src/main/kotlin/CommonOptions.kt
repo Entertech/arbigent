@@ -136,6 +136,7 @@ fun createAiProvider(
       codexExecutable = aiType.codexCommand,
       modelName = aiType.codexModelName,
       reasoningEffort = aiType.codexReasoningEffort,
+      sessionCacheMode = aiType.codexSessionCache,
       profile = aiType.codexProfile,
       sandbox = aiType.codexSandbox,
       approvalPolicy = aiType.codexApprovalPolicy,

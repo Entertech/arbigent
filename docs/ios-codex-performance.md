@@ -59,11 +59,25 @@ Override when needed:
 --codex-reasoning-effort=medium
 ```
 
-Each Codex API log now records `durationMs`, timestamps, model, reasoning effort, screenshot path, schema path, process log path, and the final structured response. CLI exits also write and print `arbigent-result/summary.txt`, so every run has an explicit success or failure conclusion.
+Each Codex API log now records `durationMs`, timestamps, model, reasoning effort, session cache mode, Codex session id, whether the turn was resumed, whether schema was enforced by the CLI, screenshot path, schema path, process log path, and the final structured response. CLI exits also write and print `arbigent-result/summary.txt`, so every run has an explicit success or failure conclusion.
+
+Codex session caching is enabled by default with:
+
+```bash
+--codex-session-cache=auto
+```
+
+In this mode, the first Arbigent step creates a persisted Codex exec session. Later steps run `codex exec resume` and send an incremental prompt containing the current UI state plus the last recorded step, relying on the resumed Codex session for earlier context. This avoids repeatedly sending the full step history through a fresh Codex session.
+
+The local `codex-cli 0.130.0` supports `codex exec --output-schema`, but its `codex exec resume --help` does not expose `--output-schema`. For that version, `auto` resumes without CLI schema enforcement and lets Arbigent's in-process parser validate the returned action. Use this stricter mode if that tradeoff is not acceptable:
+
+```bash
+--codex-session-cache=schema-only
+```
 
 ## When to Switch Providers
 
-Codex CLI is still useful when the desired auth boundary is "use the local Codex login, no OpenAI API key". It is not the lowest-latency provider because each step starts a local `codex exec` decision process.
+Codex CLI is still useful when the desired auth boundary is "use the local Codex login, no OpenAI API key". Session caching removes repeated full-history prompts, but it is not the lowest-latency provider because each step still starts a local `codex exec` process.
 
 If optimized Codex CLI still stays above about 10s per step for routine UI decisions, the next implementation should be a direct API provider:
 

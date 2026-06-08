@@ -332,6 +332,8 @@ Options for Codex CLI AI:
   --codex-command=<text>                 Codex executable path or command name
   --codex-model-name=<text>              Codex model name
   --codex-reasoning-effort=<text>        Codex model reasoning effort
+  --codex-session-cache=(auto|schema-only|off)
+                                          Codex session cache mode
   --codex-profile=<text>                 Codex config profile
   --codex-sandbox=<text>                 Codex sandbox mode
   --codex-approval-policy=<text>         Codex approval policy

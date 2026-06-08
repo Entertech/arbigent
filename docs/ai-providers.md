@@ -55,17 +55,24 @@ Optional environment variables:
 export ARBIGENT_CODEX_COMMAND=codex
 export ARBIGENT_CODEX_MODEL=gpt-5.5
 export ARBIGENT_CODEX_REASONING_EFFORT=low
+export ARBIGENT_CODEX_SESSION_CACHE=auto
 export ARBIGENT_CODEX_PROFILE=default
 export ARBIGENT_CODEX_SANDBOX=read-only
 export ARBIGENT_CODEX_APPROVAL_POLICY=never
 export ARBIGENT_CODEX_TIMEOUT_MS=300000
 ```
 
-Each Codex decision writes `durationMs`, timestamps, model, reasoning effort, screenshot path, schema path, process log path, and final JSON response into the step API log under `arbigent-result/jsonls/`. The CLI also writes `arbigent-result/summary.txt` and prints a final `SUCCESS` or `FAILED` conclusion with step counts, duration, last action, and result paths.
+Codex session cache modes:
+
+- `auto` (default): the first step creates a persisted Codex exec session; later steps use `codex exec resume` with a smaller incremental prompt. If the installed Codex CLI supports `resume --output-schema`, Arbigent keeps schema enforcement on resumed turns. If not, Arbigent resumes without CLI schema enforcement and still validates the returned JSON action in-process.
+- `schema-only`: resumes only when the installed Codex CLI supports `resume --output-schema`; otherwise it keeps the older stateless `codex exec --output-schema` behavior.
+- `off`: always uses stateless `codex exec --ephemeral --output-schema`.
+
+Each Codex decision writes `durationMs`, timestamps, model, reasoning effort, session cache mode, Codex session id, whether the turn was resumed, whether schema was enforced by the CLI, screenshot path, schema path, process log path, and final JSON response into the step API log under `arbigent-result/jsonls/`. The CLI also writes `arbigent-result/summary.txt` and prints a final `SUCCESS` or `FAILED` conclusion with step counts, duration, last action, and result paths.
 
 Performance notes:
 
-- A Codex CLI step starts a local `codex exec` process and performs one vision decision. This is convenient because it reuses local Codex authentication, but it is slower than a long-lived direct API adapter.
+- With `--codex-session-cache=auto`, each step still starts a local Codex CLI process, but Arbigent resumes the same Codex session so the model can reuse conversation history and the prompt can avoid resending full step history. This is convenient because it reuses local Codex authentication, but it is still slower than a long-lived direct API adapter.
 - iOS real-device runs also spend time capturing a screenshot, fetching the XCTest view hierarchy, drawing element annotations, and building the prompt.
 - When a task is close to completion but hits `--max-step`, Arbigent retries from the current device state. For long App Store or media browsing tasks, prefer a higher limit such as `--max-step=20` before increasing retries.
 - If a workflow must consistently hit low single-digit seconds per step, use an OpenAI-compatible HTTP provider or add a dedicated direct API provider instead of routing every decision through Codex CLI.
