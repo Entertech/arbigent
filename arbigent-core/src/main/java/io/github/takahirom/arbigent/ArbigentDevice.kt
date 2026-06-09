@@ -212,18 +212,40 @@ public class MaestroDevice(
     screenshotsDir = screenshotsDir.toPath(),
   )
 
+  // Per-screen cache of the view hierarchy. Fetching it from the device (XCTest
+  // on iOS, UIAutomator on Android) is the dominant non-model cost, and the agent
+  // loop otherwise fetches it ~6x per step: ensureConnected() probes it before
+  // every device op (4x: elements/screenshot/viewTree/action) and elements() +
+  // viewTreeString() each fetch it again. Caching collapses that to one fetch per
+  // step. Invalidated after any UI-changing action and on reconnect.
+  @Volatile private var cachedHierarchy: ViewHierarchy? = null
+
+  private fun currentHierarchy(): ViewHierarchy {
+    cachedHierarchy?.let { return it }
+    val vh: ViewHierarchy
+    val ms = measureTimeMillis { vh = runBlocking { maestro.viewHierarchy(false) } }
+    arbigentDebugLog("PERF viewHierarchy fetch ${ms}ms")
+    cachedHierarchy = vh
+    return vh
+  }
+
   override fun deviceName(): String {
     return availableDevice?.name ?: maestro.deviceName
   }
 
   @Synchronized
   private fun ensureConnected() {
-    // Try a simple operation to check connection
+    // If we already have a fresh hierarchy for the current screen, the channel was
+    // alive moments ago; skip the (expensive) probe. Otherwise fetch it once —
+    // this both verifies the connection and populates the per-screen cache so the
+    // following elements()/viewTreeString() reuse it instead of re-fetching.
+    if (cachedHierarchy != null) return
     try {
-      runBlocking { maestro.viewHierarchy() }
+      cachedHierarchy = runBlocking { maestro.viewHierarchy(false) }
     } catch (e: Exception) {
       // Device appears disconnected, reconnect
       arbigentInfoLog("MaestroDevice failed to fetch view hierarchy: ${e.message}. Reconnect device ${maestro.deviceName}")
+      cachedHierarchy = null
       reconnectIfDisconnected()
     }
   }
@@ -231,7 +253,14 @@ public class MaestroDevice(
   override fun executeActions(actions: List<MaestroCommand>) {
     ensureConnected()
     ArbigentGlobalStatus.onDevice(actions.joinToString { it.toString() }) {
-      runBlocking { orchestra.runFlow(actions) }
+      val ms = measureTimeMillis { runBlocking { orchestra.runFlow(actions) } }
+      arbigentDebugLog("PERF executeActions ${ms}ms")
+    }
+    // Any non-screenshot command may change the screen, so drop the cached
+    // hierarchy. A pure takeScreenshot does not change the UI, so the cache from
+    // elements() stays valid for the following viewTreeString() in the same step.
+    if (actions.any { it.takeScreenshotCommand == null }) {
+      cachedHierarchy = null
     }
   }
 
@@ -244,12 +273,13 @@ public class MaestroDevice(
     ensureConnected()
     for (it in 0..2) {
       try {
-        val viewHierarchy = runBlocking { maestro.viewHierarchy(false) }
+        val viewHierarchy = currentHierarchy()
         val deviceInfo = maestro.cachedDeviceInfo
         val elementList = ArbigentElementList.from(viewHierarchy, deviceInfo)
         return elementList
       } catch (e: ArbigentElementList.NodeInBoundsNotFoundException) {
         arbigentDebugLog("NodeInBoundsNotFoundException. Retry $it")
+        cachedHierarchy = null // force a fresh fetch on retry
         Thread.sleep(1000)
       }
     }
@@ -261,7 +291,7 @@ public class MaestroDevice(
     ensureConnected()
     for (it in 0..2) {
       try {
-        val viewHierarchy = runBlocking { maestro.viewHierarchy(false) }
+        val viewHierarchy = currentHierarchy()
         return ArbigentUiTreeStrings(
           allTreeString = viewHierarchy.toString(),
           optimizedTreeString = viewHierarchy.toOptimizedString(
@@ -271,6 +301,7 @@ public class MaestroDevice(
         )
       } catch (e: ArbigentElementList.NodeInBoundsNotFoundException) {
         arbigentDebugLog("NodeInBoundsNotFoundException. Retry $it")
+        cachedHierarchy = null // force a fresh fetch on retry
         Thread.sleep(1000)
       }
     }
@@ -603,6 +634,7 @@ public class MaestroDevice(
   
   private fun updateConnection(newMaestro: Maestro) {
     this.maestro = newMaestro
+    this.cachedHierarchy = null
     this.orchestra = Orchestra(maestro = this.maestro, screenshotsDir = this.screenshotsDir.toPath())
   }
 

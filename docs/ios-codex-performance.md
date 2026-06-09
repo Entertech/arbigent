@@ -70,6 +70,29 @@ Two opposite, actionable findings:
 > `ANDROID_SERIAL` (or `ARBIGENT_ANDROID_DEVICE_ID`) to its `ro.serialno`. Without
 > it the CLI picks an arbitrary device.
 
+## Device layer: per-step view-hierarchy caching (measured ~33% faster/step)
+
+Once `--codex-direct` made the model ~6–10s, the iOS device I/O became the next
+bottleneck. Instrumenting `MaestroDevice` showed the cost was **redundant view
+hierarchy fetches**, not the tap or screenshot:
+
+- One `viewHierarchy` fetch ≈ 0.5–0.85s; screenshot ≈ 0.15–0.2s; `toOptimizedString`
+  ≈ 1ms; tap+settle ≈ 2.4–3.6s.
+- But the agent fetched the hierarchy **~6× per step**: `ensureConnected()` ran a
+  full `maestro.viewHierarchy()` *and threw it away* purely to probe the channel,
+  before **every** device op (elements / screenshot / viewTree / action = 4×),
+  plus `elements()` and `viewTreeString()` each fetched it again.
+
+Fix: `MaestroDevice` now caches the hierarchy per screen — `ensureConnected()`
+populates the cache (so the probe is no longer wasted), `elements()` and
+`viewTreeString()` reuse it, and it is invalidated after any non-screenshot action
+and on reconnect. That collapses ~6 fetches/step to **1**.
+
+**Measured (iPhone 12 mini, same Music task, `--codex-direct`):** ~11.7s/step →
+**~7.8s/step** (~33% faster), still SUCCESS. This also makes `elements()` and the
+UI-tree text exactly consistent (same snapshot). Applies to Android too (fewer
+UIAutomator dumps), though Android dumps are cheaper.
+
 ## Session cache mode: stateless `off` is the default (measured)
 
 The biggest, most general Codex latency lever is the session cache mode. As of
