@@ -208,9 +208,16 @@ public class OpenAIAi @OptIn(ArbigentInternalApi::class) constructor(
     val original = File(screenshotFilePath)
     val canvas = ArbigentCanvas.load(original, elements.screenWidth, TYPE_INT_RGB)
     canvas.draw(elements)
-    canvas.save(original.getAnnotatedFilePath(), decisionInput.aiOptions)
+    val annotatedFile = original.getAnnotatedFilePath()
+    canvas.save(annotatedFile, decisionInput.aiOptions)
 
-    val imageBase64 = File(screenshotFilePath).getResizedIamgeBase64(1.0F)
+    // Send the ANNOTATED image, not the raw original. The original is a native-
+    // resolution screenshot (e.g. iPhone @3x ≈ 1125x2436, ~3.6MB base64); a device
+    // that large makes the model tokenize a huge number of image tiles and can take
+    // ~60-80s per call. The annotated image is rescaled to the grid width and capped
+    // (capLongEdge, ≤1024) to ~95KB, AND carries the set-of-marks index labels for
+    // grounding. This matches what CodexResponsesAiProvider already sends.
+    val imageBase64 = File(annotatedFile).getResizedIamgeBase64(1.0F)
     val prompt =
       buildPrompt(
         contextHolder = contextHolder,
