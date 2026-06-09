@@ -33,18 +33,24 @@ Two opposite, actionable findings:
    `IOSDriver.kt:597`, **not env-configurable**) and, if the screen never reports
    static, a ~2s fallback that polls the full view hierarchy 10× at 200ms. Pages
    with any persistent animation/live content pay the full ~5s every action.
-   *iOS-specific lever (delivered, modest):* the settle timeout is now configurable
-   via `MAESTRO_IOS_SCREEN_SETTLE_TIMEOUT_MS` (Maestro `looktech.3`, default 3000
-   unchanged). **Measured:** dropping it to 1200ms cut the action→screenshot gap
-   only ~7s→~6s — so on these screens the 3000ms cap was *not* fully consumed (the
-   screen went static earlier) and the ~6s floor is dominated by the XCTest
-   tap/screenshot/view-hierarchy round-trips, not the settle. The knob helps most
-   on screens that never report static (persistent animation/video — e.g. Apple
-   Music, the originally-documented case). Cutting the floor further means speeding
-   the XCTest I/O itself (harder). Android's `input keyevent` + lighter UIAutomator
-   settle is inherently faster (~3s).
-   Also delivered in `looktech.3`: iOS `backPress()` now performs the left-edge
-   back-swipe (was a silent no-op — see the back-nav comparison below).
+   *iOS settle, configurable (delivered).* How "settled" is judged: after each
+   action Maestro busy-polls the XCTest runner's `isScreenStatic` — which takes
+   **two back-to-back full screenshots and compares their SHA256 hashes** (exact
+   byte-equality) — until equal or the settle timeout. Consequence: **any**
+   persistent motion (spinner, video, animated artwork, marquee text, a ticking
+   clock) never produces two identical frames, so such screens **burn the full
+   timeout every action**, then hit a ~2s hierarchy-polling fallback.
+
+   The timeout is now arbigent-configurable: setting `ios-settle-timeout-ms`
+   (`.arbigent/settings.local.yml`) or env `ARBIGENT_IOS_SETTLE_TIMEOUT_MS`, which
+   arbigent forwards to the looktech Maestro fork (`looktech.4`) via the
+   `maestro.ios.screenSettleTimeoutMs` system property, read at settle call-time
+   (default 3000, unchanged). Lowering it only affects never-static screens (static
+   screens already return early); it cuts the **primary** wait but not the ~2s
+   fallback floor, so a never-static screen goes from ~5s (3000+~2000) toward ~2.8s
+   (800+~2000), not to ~1s. Use it for animation/video-heavy tasks.
+   Also in `looktech.3+`: iOS `backPress()` performs the left-edge back-swipe (was a
+   silent no-op — see the back-nav comparison below).
 
 2. **Model layer: Android was slower, but NOT because of image resolution
    (tested).** Android initially shipped the screenshot at full 1080×2280 vs iOS

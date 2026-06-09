@@ -42,6 +42,14 @@ public data class IosRealXCTestDeviceConfig(
     public const val APPLE_TEAM_ID_SETTING: String = "ios-xctest-apple-team-id"
     public const val DRIVER_PRODUCTS_DIR_SETTING: String = "ios-xctest-driver-products-dir"
     public const val BUILD_DRIVER_SETTING: String = "ios-xctest-build-driver"
+    // Post-action settle timeout (ms) for the XCTest screen-static wait. Lower it
+    // for animation/video-heavy screens that never go byte-identical static and
+    // would otherwise burn the full default (3000ms) every action.
+    public const val SETTLE_TIMEOUT_SETTING: String = "ios-settle-timeout-ms"
+
+    public const val SETTLE_TIMEOUT_ENV: String = "ARBIGENT_IOS_SETTLE_TIMEOUT_MS"
+    // JVM system property the looktech Maestro fork reads at settle call-time.
+    private const val MAESTRO_SETTLE_PROPERTY = "maestro.ios.screenSettleTimeoutMs"
 
     private const val MAESTRO_DEVICE_ID_ENV = "MAESTRO_IOS_MIRROR_DEVICE_ID"
     private const val DEVELOPMENT_TEAM_ENV = "DEVELOPMENT_TEAM"
@@ -62,6 +70,7 @@ public data class IosRealXCTestDeviceConfig(
     }
 
     internal fun fromEnvironment(device: IosRealDevice): IosRealXCTestDeviceConfig {
+      applyScreenSettleTimeout()
       return IosRealXCTestDeviceConfig(
         deviceId = device.udid,
         deviceName = device.name,
@@ -82,6 +91,16 @@ public data class IosRealXCTestDeviceConfig(
     private fun settingOrEnv(settingKey: String, envKey: String): String? {
       return ArbigentHostConfig.get(settingKey)
         ?: System.getenv(envKey)?.takeIf { it.isNotBlank() }
+    }
+
+    // Propagate the configured iOS settle timeout to the JVM system property the
+    // looktech Maestro fork reads at settle call-time. Done here (before connect /
+    // first action) so it takes effect for all subsequent actions. Invalid values
+    // are ignored, leaving the Maestro default (3000ms).
+    private fun applyScreenSettleTimeout() {
+      val value = settingOrEnv(SETTLE_TIMEOUT_SETTING, SETTLE_TIMEOUT_ENV)?.toLongOrNull() ?: return
+      System.setProperty(MAESTRO_SETTLE_PROPERTY, value.toString())
+      arbigentInfoLog("iOS settle timeout set to ${value}ms ($MAESTRO_SETTLE_PROPERTY)")
     }
   }
 }

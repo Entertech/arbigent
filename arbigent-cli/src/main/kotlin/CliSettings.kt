@@ -74,6 +74,7 @@ private val iosHostSettingKeys: List<String> = listOf(
   IosRealXCTestDeviceConfig.APPLE_TEAM_ID_SETTING,
   IosRealXCTestDeviceConfig.DRIVER_PRODUCTS_DIR_SETTING,
   IosRealXCTestDeviceConfig.BUILD_DRIVER_SETTING,
+  IosRealXCTestDeviceConfig.SETTLE_TIMEOUT_SETTING,
 )
 
 private fun flattenYamlToMap(node: YamlNode, prefix: String = ""): Map<String, String> {
