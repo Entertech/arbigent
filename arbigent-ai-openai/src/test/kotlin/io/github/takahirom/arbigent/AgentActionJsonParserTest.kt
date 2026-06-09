@@ -10,16 +10,42 @@ import org.junit.Test
 
 class AgentActionJsonParserTest {
   @Test
-  fun `parses coordinate action from codex style json`() {
+  fun `parses normalized coordinate action from codex style json`() {
     val action = AgentActionJsonParser.parseAgentAction(
       agentActionList = listOf(ClickAtCoordinates),
       action = "ClickAtCoordinates",
-      argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("12,34"))),
+      argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("0.12,0.34"))),
       elements = emptyElements(),
       mcpTools = null,
     )
 
-    assertEquals(ClickAtCoordinates(x = 12, y = 34), action)
+    assertEquals(ClickAtCoordinates(xPercent = 12, yPercent = 34), action)
+  }
+
+  @Test
+  fun `coordinate action tolerates 0-100 percent and clamps out-of-range`() {
+    // Model mistakenly emits 0-100 percent instead of a [0,1] fraction.
+    assertEquals(
+      ClickAtCoordinates(xPercent = 50, yPercent = 73),
+      AgentActionJsonParser.parseAgentAction(
+        agentActionList = listOf(ClickAtCoordinates),
+        action = "ClickAtCoordinates",
+        argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("50,73"))),
+        elements = emptyElements(),
+        mcpTools = null,
+      )
+    )
+    // Out-of-range and negative values clamp into [0,100] rather than crashing.
+    assertEquals(
+      ClickAtCoordinates(xPercent = 100, yPercent = 0),
+      AgentActionJsonParser.parseAgentAction(
+        agentActionList = listOf(ClickAtCoordinates),
+        action = "ClickAtCoordinates",
+        argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("999,-0.2"))),
+        elements = emptyElements(),
+        mcpTools = null,
+      )
+    )
   }
 
   @Test

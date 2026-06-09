@@ -47,7 +47,7 @@ done
 grep -q '"arguments":{"type":"string"' "${'$'}schema" || exit 7
 [ -n "${'$'}reasoning_effort" ] || exit 8
 cat >/dev/null
-printf '%s' '{"action":"ClickAtCoordinates","text":"12,34","arguments":"{}","arbigent-memo":"tap visible target","arbigent-image-description":"test screen"}' > "${'$'}out"
+printf '%s' '{"action":"ClickAtCoordinates","text":"0.12,0.34","arguments":"{}","arbigent-memo":"tap visible target","arbigent-image-description":"test screen"}' > "${'$'}out"
 exit 0
         """.trimIndent()
       )
@@ -93,7 +93,7 @@ exit 0
     )
 
     assertEquals(1, output.agentActions.size)
-    assertEquals(ClickAtCoordinates(x = 12, y = 34), output.agentActions.first())
+    assertEquals(ClickAtCoordinates(xPercent = 12, yPercent = 34), output.agentActions.first())
     assertEquals("ClickAtCoordinates", output.step.action)
     assertEquals("tap visible target", output.step.memo)
     assertTrue(apiCallFile.exists())
@@ -134,11 +134,11 @@ cat >/tmp/arbigent-codex-session-prompt.txt
 if [ "${'$'}is_resume" -eq 1 ]; then
   [ -z "${'$'}schema" ] || exit 9
   printf '%s\n' 'session id: 019ea5de-adc2-7551-b0bf-04104522bfa8'
-  printf '%s' '{"action":"ClickAtCoordinates","text":"56,78","arguments":"{}","arbigent-memo":"resume tap","arbigent-image-description":"second screen"}' > "${'$'}out"
+  printf '%s' '{"action":"ClickAtCoordinates","text":"0.56,0.78","arguments":"{}","arbigent-memo":"resume tap","arbigent-image-description":"second screen"}' > "${'$'}out"
 else
   [ -n "${'$'}schema" ] || exit 8
   printf '%s\n' 'session id: 019ea5de-adc2-7551-b0bf-04104522bfa8'
-  printf '%s' '{"action":"ClickAtCoordinates","text":"12,34","arguments":"{}","arbigent-memo":"first tap","arbigent-image-description":"first screen"}' > "${'$'}out"
+  printf '%s' '{"action":"ClickAtCoordinates","text":"0.12,0.34","arguments":"{}","arbigent-memo":"first tap","arbigent-image-description":"first screen"}' > "${'$'}out"
 fi
 exit 0
         """.trimIndent()
@@ -186,7 +186,7 @@ exit 0
       )
     )
 
-    assertEquals(ClickAtCoordinates(x = 56, y = 78), secondOutput.agentActions.first())
+    assertEquals(ClickAtCoordinates(xPercent = 56, yPercent = 78), secondOutput.agentActions.first())
     val secondLog = secondApiCallFile.readText()
     assertTrue(secondLog.contains("resume"))
     val responseJson = Json.parseToJsonElement(secondLog).jsonObject

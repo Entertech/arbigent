@@ -172,6 +172,7 @@ For ordinary Arbigent actions, put the primary argument in "text". Use an empty 
 Set "arguments" to "{}" unless selecting an MCP action.
 For MCP actions, put tool arguments in "arguments" as a compact JSON object string and keep "text" empty.
 Use ClickWithIndex when a visible target exists in ELEMENTS.
+When a target is clearly VISIBLE in the screenshot but has NO matching entry in ELEMENTS (e.g. iOS home-screen app icons, games/canvas, or native system dialogs), use ClickAtCoordinates with normalized coordinates "nx,ny" as fractions in [0,1] (top-left origin, screen center = "0.5,0.5"). Always prefer ClickWithIndex whenever the target appears in ELEMENTS; only fall back to ClickAtCoordinates when it does not.
 If a visible target is only partially visible or close to a screen edge, navigation bar, or tab bar, use Scroll or Swipe to center it before clicking.
 Before choosing GoalAchieved, verify every explicit constraint in GOAL and write the evidence in arbigent-memo. If the current screen is a plausible but unverified leftover from a previous task, continue navigating instead of finishing.
 """.trimIndent()

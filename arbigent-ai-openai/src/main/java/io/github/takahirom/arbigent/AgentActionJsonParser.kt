@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import maestro.SwipeDirection
+import kotlin.math.roundToInt
 
 internal object AgentActionJsonParser {
   private val json = Json {
@@ -120,13 +121,13 @@ internal object AgentActionJsonParser {
         val text = textArgument(argumentsJsonData)
         val parts = text.split(",").map { it.trim() }
         if (parts.size != 2) {
-          throw IllegalArgumentException("text should be \"x,y\" for ${ClickAtCoordinates.actionName}, got: \"$text\"")
+          throw IllegalArgumentException("text should be \"nx,ny\" (fractions in [0,1]) for ${ClickAtCoordinates.actionName}, got: \"$text\"")
         }
-        val x = parts[0].toIntOrNull()
-          ?: throw IllegalArgumentException("x is not an integer for ${ClickAtCoordinates.actionName}: \"${parts[0]}\"")
-        val y = parts[1].toIntOrNull()
-          ?: throw IllegalArgumentException("y is not an integer for ${ClickAtCoordinates.actionName}: \"${parts[1]}\"")
-        ClickAtCoordinates(x = x, y = y)
+        val nx = parts[0].toDoubleOrNull()
+          ?: throw IllegalArgumentException("nx is not a number for ${ClickAtCoordinates.actionName}: \"${parts[0]}\"")
+        val ny = parts[1].toDoubleOrNull()
+          ?: throw IllegalArgumentException("ny is not a number for ${ClickAtCoordinates.actionName}: \"${parts[1]}\"")
+        ClickAtCoordinates(xPercent = toPercent(nx), yPercent = toPercent(ny))
       }
 
       BackPressAgentAction -> BackPressAgentAction()
@@ -178,5 +179,20 @@ internal object AgentActionJsonParser {
   private fun textArgument(argumentsJsonData: JsonObject): String {
     return argumentsJsonData["text"]?.jsonPrimitive?.content
       ?: throw IllegalArgumentException("Text not found")
+  }
+
+  /**
+   * Normalize a model-supplied coordinate value to an integer percent in [0,100].
+   * The contract asks for a fraction in [0,1], but models sometimes emit a 0-100
+   * percent instead; both are accepted and anything out of range is clamped, so a
+   * hallucinated value degrades to an in-bounds tap rather than crashing downstream.
+   */
+  private fun toPercent(raw: Double): Int {
+    val fraction = when {
+      raw <= 1.0 -> raw           // intended contract: fraction in [0,1]
+      raw <= 100.0 -> raw / 100.0 // tolerate a 0-100 percent mistake
+      else -> 1.0                 // out of range -> clamp to far edge
+    }
+    return (fraction.coerceIn(0.0, 1.0) * 100).roundToInt().coerceIn(0, 100)
   }
 }

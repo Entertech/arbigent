@@ -69,11 +69,21 @@ public data class ClickWithIndex(val index: Int) : ArbigentAgentAction {
 
   override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
     val elements = runInput.elements
+    // Bounds-check instead of indexing blindly: a cached/stale index replayed
+    // against a shorter (or empty, vision-only) live element list would otherwise
+    // throw an uncaught IndexOutOfBoundsException and abort the whole step. An
+    // IllegalStateException IS caught by executeActions and surfaced to the model
+    // as feedback, steering it to ClickAtCoordinates when the tree lacks the target.
+    val element = elements.elements.getOrNull(index)
+      ?: throw IllegalStateException(
+        "Index $index is not available in ELEMENTS (size=${elements.elements.size}). " +
+          "If the target is visible in the screenshot but missing from ELEMENTS, use ClickAtCoordinates."
+      )
     runInput.device.executeActions(
       actions = listOf(
         MaestroCommand(
           tapOnPointV2Command = TapOnPointV2Command(
-            point = "${elements.elements[index].rect.centerX()},${elements.elements[index].rect.centerY()}"
+            point = "${element.rect.centerX()},${element.rect.centerY()}"
           )
         )
       ),
@@ -96,20 +106,36 @@ public data class ClickWithIndex(val index: Int) : ArbigentAgentAction {
   }
 }
 
+/**
+ * Vision-grounded tap. Coordinates are NORMALIZED fractions of the screenshot in
+ * [0,100] percent (xPercent=0 left edge, 100 right edge; yPercent=0 top, 100 bottom).
+ *
+ * Why percent and not raw pixels: the model only ever sees the annotated screenshot,
+ * which Arbigent rescales (ArbigentCanvas.load) and then caps to a max long edge
+ * (capLongEdge). A pixel the model reads off that downscaled image is in the wrong
+ * coordinate space and would land far from the intended target on a high-DPI device.
+ * A fraction is invariant under uniform downscaling, so emitting "x%,y%" lets each
+ * backend scale it against its OWN true tap space: Maestro's Orchestra routes a
+ * percent point through tapOnRelative -> widthGrid/heightGrid, and the iOS mirror
+ * backend's parsePoint scales it against the mirror window size. No new transform
+ * code, correct on every backend, with or without a view tree.
+ */
 @Serializable
-public data class ClickAtCoordinates(val x: Int, val y: Int) : ArbigentAgentAction {
+public data class ClickAtCoordinates(val xPercent: Int, val yPercent: Int) : ArbigentAgentAction {
   override val actionName: String = Companion.actionName
 
   override fun stepLogText(): String {
-    return "Click at coordinates: ($x, $y)"
+    return "Click at coordinates: (${xPercent}%, ${yPercent}%)"
   }
 
   override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
+    val px = xPercent.coerceIn(0, 100)
+    val py = yPercent.coerceIn(0, 100)
     runInput.device.executeActions(
       actions = listOf(
         MaestroCommand(
           tapOnPointV2Command = TapOnPointV2Command(
-            point = "$x,$y"
+            point = "${px}%,${py}%"
           )
         )
       ),
@@ -124,11 +150,11 @@ public data class ClickAtCoordinates(val x: Int, val y: Int) : ArbigentAgentActi
         AgentActionType.Argument(
           name = "text",
           type = "string",
-          description = "Raw screen coordinates to tap, formatted as \"x,y\" (e.g. \"195,760\"). Use this ONLY when a target element is visible in the screenshot but NOT present in the ELEMENTS/UI-tree list (typical for native iOS system dialogs like Sign in with Apple, permission prompts, etc.). Coordinates are in screen logical points starting at (0,0) top-left."
+          description = "Normalized tap position as \"nx,ny\" where nx and ny are fractions in [0,1] of the screenshot (nx=0 left, 1 right; ny=0 top, 1 bottom). The center of the screen is \"0.5,0.5\". Use this when a target is VISIBLE in the screenshot but has NO matching index in ELEMENTS — e.g. iOS home-screen app icons, games/canvas UIs, or native system dialogs. ALWAYS prefer ClickWithIndex when the target appears in ELEMENTS."
         )
       )
 
-    override fun actionDescription(): String = "Tap at raw screen coordinates. Use only when the target is not in the UI hierarchy."
+    override fun actionDescription(): String = "Tap at a normalized screen position (fraction of the image). Use when the target is visible but absent from the ELEMENTS list."
   }
 }
 
@@ -477,7 +503,11 @@ public data class DpadAutoFocusWithIndexAgentAction(val index: Int) : ArbigentAg
     val elements = runInput.elements
     val tvCompatibleDevice = (runInput.device as? ArbigentTvCompatDevice)
       ?: throw NotImplementedError(message = "This action is only available for TV device")
-    tvCompatibleDevice.moveFocusToElement(elements.elements[index])
+    val element = elements.elements.getOrNull(index)
+      ?: throw IllegalStateException(
+        "Index $index is not available in ELEMENTS (size=${elements.elements.size})."
+      )
+    tvCompatibleDevice.moveFocusToElement(element)
   }
 
   public companion object : AgentActionType {

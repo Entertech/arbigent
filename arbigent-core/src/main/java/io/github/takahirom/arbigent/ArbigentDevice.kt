@@ -114,15 +114,21 @@ public data class ArbigentElementList(
       var index = 0
       val deviceInfo = deviceInfo
       val root = viewHierarchy.root
+      // Tree-optional: when the platform yields no in-bounds nodes (vision-only
+      // backends like the iOS mirror, or full-screen game/canvas/system surfaces
+      // with no accessibility tree), return an empty element list instead of
+      // throwing. The agent then grounds by ClickAtCoordinates on the screenshot.
       val treeNode = root.filterOutOfBounds(
         width = deviceInfo.widthPixels,
         height = deviceInfo.heightPixels
-      ) ?: throw NodeInBoundsNotFoundException()
+      ) ?: return ArbigentElementList(emptyList(), deviceInfo.widthGrid)
       val result = treeNode.optimizeTree2(
         isRoot = true,
         viewHierarchy = viewHierarchy,
       )
-      val optimizedTree = (result.node ?: result.promotedChildren.firstOrNull())!!
+      val optimizedTree = result.node
+        ?: result.promotedChildren.firstOrNull()
+        ?: return ArbigentElementList(emptyList(), deviceInfo.widthGrid)
       val elements = mutableListOf<ArbigentElement>()
       fun TreeNode.toElement(): ArbigentElement {
         val bounds = toUiElementOrNull()?.bounds
@@ -283,7 +289,7 @@ public class MaestroDevice(
         Thread.sleep(1000)
       }
     }
-    return ArbigentElementList(emptyList(), maestro.cachedDeviceInfo.widthPixels)
+    return ArbigentElementList(emptyList(), maestro.cachedDeviceInfo.widthGrid)
   }
 
 
@@ -365,7 +371,7 @@ public class MaestroDevice(
     val nodes = root.filterOutOfBounds(
       width = deviceInfo.widthPixels,
       height = deviceInfo.heightPixels
-    ) ?: throw ArbigentElementList.NodeInBoundsNotFoundException()
+    ) ?: return "" // tree-optional: empty/no-in-bounds tree -> empty optimized string
     val result = nodes.optimizeTree2(
       isRoot = true,
       viewHierarchy = this,

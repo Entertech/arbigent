@@ -896,6 +896,12 @@ public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
 //    ClickWithIdAgentAction,
 //    ClickWithTextAgentAction,
     ClickWithIndex,
+    // Hybrid grounding: a normalized-coordinate tap is always available as a
+    // fallback for targets that are visible in the screenshot but absent from the
+    // set-of-marks ELEMENTS list (iOS home-screen icons, games/canvas, native
+    // dialogs) and for vision-only backends with no view tree (e.g. iOS mirror).
+    // ClickWithIndex stays first and the prompt steers the model to prefer it.
+    ClickAtCoordinates,
     InputTextAgentAction,
     BackPressAgentAction,
     KeyPressAgentAction,
@@ -968,6 +974,14 @@ private fun mergeAdditionalActions(
     val isDpadAction = actionName.startsWith("Dpad")
     if (isDpadAction && deviceFormFactor == ArbigentScenarioDeviceFormFactor.Mobile) {
       arbigentInfoLog("Warning: D-pad action '$actionName' is not compatible with Mobile device form factor")
+      return@mapNotNull null
+    }
+
+    // Dedup: some actions (e.g. ClickAtCoordinates) are now part of the default
+    // set. If a user also lists them in additionalActions, skip the duplicate so
+    // the toolset never contains two identical actions (which would collide in the
+    // generated tool/function schema).
+    if (baseActionTypes.any { it == actionType }) {
       return@mapNotNull null
     }
 
@@ -1178,10 +1192,24 @@ private suspend fun step(
   val uiTreeStrings = device.viewTreeString()
   val uiTreeHash = uiTreeStrings.optimizedTreeString.hashCode().toString().replace("-", "")
   val contextHash = contextHolder.context(aiOptions).hashCode().toString().replace("-", "")
-  val cacheKey = "v${BuildConfig.VERSION_NAME}-decision-r2-uitree-${uiTreeHash}-context-${contextHash}"
-  arbigentInfoLog("cacheKey: $cacheKey")
   val originalScreenshotFilePath =
     ArbigentFiles.screenshotsDir.absolutePath + File.separator + "$stepId.png"
+  // Vision-aware cache key: when the optimized UI tree is blank (vision-only /
+  // mirror / tree-less screens) the uiTreeHash collapses to "0" ("".hashCode()==0)
+  // and would collide across every distinct tree-less screen. Fold in a screenshot
+  // content hash so pixel-distinct screens get distinct keys; this prevents a cached
+  // coordinate tap from replaying on the wrong screen. Tree-rich screens keep the
+  // original (tree-based) key, preserving replay-cache hit rate. The "-r3-" marker
+  // also invalidates stale "-r2-" entries whose action serialization shape changed.
+  val visionHash = if (uiTreeStrings.optimizedTreeString.isBlank()) {
+    runCatching { File(originalScreenshotFilePath).readBytes().contentHashCode() }
+      .getOrDefault(0).toString().replace("-", "")
+  } else null
+  val cacheKey = buildString {
+    append("v${BuildConfig.VERSION_NAME}-decision-r3-uitree-${uiTreeHash}-context-${contextHash}")
+    if (visionHash != null) append("-screen-${visionHash}")
+  }
+  arbigentInfoLog("cacheKey: $cacheKey")
   if (File(originalScreenshotFilePath).exists().not()) {
     arbigentErrorLog("Failed to take screenshot. originalScreenshotFilePath:$originalScreenshotFilePath")
     contextHolder.addStep(

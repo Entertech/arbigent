@@ -167,8 +167,9 @@ public class ArbigentCanvas(width: Int, height: Int, bufferedImageType: Int) {
     // set-of-marks (numbered boxes + ClickWithIndex returns an index, not pixel
     // coordinates), so high resolution is unnecessary for grounding. iOS images are
     // already under this cap and unchanged. Override with ARBIGENT_MODEL_IMAGE_MAX_LONG_EDGE
-    // (set <=0 to disable). ClickAtCoordinates is opt-in / off by default, so the
-    // default action set is unaffected by the downscale.
+    // (set <=0 to disable). The hybrid ClickAtCoordinates fallback is unaffected by the
+    // downscale because it uses NORMALIZED coordinates (fractions of the image), which
+    // are invariant under uniform rescaling — see ClickAtCoordinates in AgentCommands.kt.
     public const val DEFAULT_MODEL_IMAGE_MAX_LONG_EDGE: Int = 1024
 
     internal fun modelImageMaxLongEdge(): Int =
