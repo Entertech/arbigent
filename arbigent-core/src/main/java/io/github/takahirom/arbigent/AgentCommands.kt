@@ -693,6 +693,58 @@ public data class SwipeAgentAction(val direction: SwipeDirection) : ArbigentAgen
   }
 }
 
+/**
+ * Drag/swipe from a start point to an end point — arbitrary start position,
+ * direction, and length. Coordinates are NORMALIZED percent [0,100] of the
+ * screenshot, emitted as Maestro startRelative/endRelative ("x%,y%") so each
+ * backend scales against its own grid (resolution-independent, cap-invariant).
+ * Use when the 4-direction Swipe is too coarse: sliders, dragging a specific
+ * item, reordering, or a short/precise scroll.
+ */
+@Serializable
+public data class DragAgentAction(
+  val startXPercent: Int,
+  val startYPercent: Int,
+  val endXPercent: Int,
+  val endYPercent: Int,
+) : ArbigentAgentAction {
+  override val actionName: String = Companion.actionName
+
+  override fun stepLogText(): String {
+    return "Drag: (${startXPercent}%, ${startYPercent}%) -> (${endXPercent}%, ${endYPercent}%)"
+  }
+
+  override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
+    fun clamp(v: Int) = v.coerceIn(0, 100)
+    runInput.device.executeActions(
+      actions = listOf(
+        MaestroCommand(
+          swipeCommand = SwipeCommand(
+            startRelative = "${clamp(startXPercent)}%,${clamp(startYPercent)}%",
+            endRelative = "${clamp(endXPercent)}%,${clamp(endYPercent)}%",
+          )
+        )
+      ),
+    )
+  }
+
+  public companion object : AgentActionType {
+    override val actionName: String = "Drag"
+
+    override fun actionDescription(): String =
+      "Drag/swipe from a start point to an end point (any direction, length, and position). Use when the 4-direction Swipe is too coarse: sliders, dragging a specific item, or a precise short scroll."
+
+    override fun arguments(): List<AgentActionType.Argument> =
+      listOf(
+        AgentActionType.Argument(
+          name = "text",
+          type = "string",
+          description = "Start and end as normalized fractions in [0,1]: \"startX,startY,endX,endY\" (top-left origin; 0,0 = top-left, 1,1 = bottom-right). Example: drag from center upward = \"0.5,0.5,0.5,0.2\"."
+        )
+      )
+  }
+}
+
 @Serializable
 public data class KeyPressAgentAction(val keyName: String) : ArbigentAgentAction {
   override val actionName: String = "KeyPress"

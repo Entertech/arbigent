@@ -153,6 +153,24 @@ internal object AgentActionJsonParser {
         SwipeAgentAction(direction)
       }
 
+      DragAgentAction -> {
+        val text = textArgument(argumentsJsonData)
+        val parts = text.split(",").map { it.trim() }
+        if (parts.size != 4) {
+          throw IllegalArgumentException("text should be \"startX,startY,endX,endY\" (fractions in [0,1]) for ${DragAgentAction.actionName}, got: \"$text\"")
+        }
+        val n = parts.map { p ->
+          p.toDoubleOrNull()
+            ?: throw IllegalArgumentException("non-numeric coordinate for ${DragAgentAction.actionName}: \"$p\"")
+        }
+        DragAgentAction(
+          startXPercent = toPercent(n[0]),
+          startYPercent = toPercent(n[1]),
+          endXPercent = toPercent(n[2]),
+          endYPercent = toPercent(n[3]),
+        )
+      }
+
       else -> throw IllegalArgumentException("Unsupported action: $action")
     }
   }

@@ -911,6 +911,9 @@ public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
     KeyPressAgentAction,
     ScrollAgentAction,
     SwipeAgentAction,
+    // Arbitrary start/direction/length swipe (slider drag, precise short scroll,
+    // reorder). Normalized start->end; reuses Maestro's startRelative/endRelative.
+    DragAgentAction,
     WaitAgentAction,
     GoalAchievedAgentAction,
     FailedAgentAction,

@@ -93,7 +93,23 @@ class AgentActionJsonParserTest {
   }
 
   @Test
-  fun `parses goal action without text argument`() {
+  fun `parses drag action from four normalized fractions`() {
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = listOf(DragAgentAction),
+      action = "Drag",
+      argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive("0.5,0.5,0.5,0.2"))),
+      elements = emptyElements(),
+      mcpTools = null,
+    )
+
+    assertEquals(
+      DragAgentAction(startXPercent = 50, startYPercent = 50, endXPercent = 50, endYPercent = 20),
+      action,
+    )
+  }
+
+  @Test
+  fun `goal action without text argument`() {
     val action = AgentActionJsonParser.parseAgentAction(
       agentActionList = listOf(GoalAchievedAgentAction),
       action = "GoalAchieved",

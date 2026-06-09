@@ -155,7 +155,15 @@ internal class IosRealMirrorDevice(
         // revealed, mirroring the scrollCommand mapping above.
         val nearLow = 0.28
         val nearHigh = 0.78
-        val (fromX, fromY, toX, toY) = when (swipe.direction) {
+        val startRel = swipe.startRelative
+        val endRel = swipe.endRelative
+        val (fromX, fromY, toX, toY) = if (startRel != null && endRel != null) {
+          // Arbitrary coordinate drag (DragAgentAction): scale the "x%,y%" points
+          // against the mirror window, same path as tapOnPointV2Command.
+          val (sx, sy) = parsePoint(startRel, screen)
+          val (ex, ey) = parsePoint(endRel, screen)
+          arrayOf(sx, sy, ex, ey)
+        } else when (swipe.direction) {
           SwipeDirection.DOWN -> arrayOf(
             screen.width / 2, (screen.height * nearLow).toInt(),
             screen.width / 2, (screen.height * nearHigh).toInt(),
