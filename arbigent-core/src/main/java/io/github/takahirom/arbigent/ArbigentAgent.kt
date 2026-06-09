@@ -904,6 +904,10 @@ public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
     ClickAtCoordinates,
     InputTextAgentAction,
     BackPressAgentAction,
+    // Recovery: return to the launcher to escape a wrong-app tap or get back to a
+    // known starting point. Without this, a mis-tap can trap the agent in an app
+    // it cannot exit (iOS BackPress is an in-app edge swipe, not a home gesture).
+    GoHomeAgentAction,
     KeyPressAgentAction,
     ScrollAgentAction,
     SwipeAgentAction,

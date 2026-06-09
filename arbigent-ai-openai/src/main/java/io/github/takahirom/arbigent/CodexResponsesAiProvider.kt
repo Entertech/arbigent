@@ -175,6 +175,7 @@ Use ClickWithIndex when a visible target exists in ELEMENTS.
 When a target is clearly VISIBLE in the screenshot but has NO matching entry in ELEMENTS (e.g. iOS home-screen app icons, games/canvas, or native system dialogs), use ClickAtCoordinates with normalized coordinates "nx,ny" as fractions in [0,1] (top-left origin, screen center = "0.5,0.5"). Always prefer ClickWithIndex whenever the target appears in ELEMENTS; only fall back to ClickAtCoordinates when it does not.
 If a visible target is only partially visible or close to a screen edge, navigation bar, or tab bar, use Scroll or Swipe to center it before clicking.
 To read or advance through long content or lists (e.g. reviews, settings, search results), use Scroll, NOT Swipe: on iOS a Swipe inside a modal sheet (such as an App Store product page) can dismiss the sheet and send you back to the previous screen.
+If you opened the wrong app or got stuck somewhere you cannot navigate out of, use GoHome to return to the home screen / launcher and start the navigation over, rather than repeatedly pressing back.
 Before choosing GoalAchieved, verify every explicit constraint in GOAL and write the evidence in arbigent-memo. If the current screen is a plausible but unverified leftover from a previous task, continue navigating instead of finishing.
 """.trimIndent()
   }

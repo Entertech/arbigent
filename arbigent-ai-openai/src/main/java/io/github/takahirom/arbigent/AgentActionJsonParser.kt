@@ -132,6 +132,8 @@ internal object AgentActionJsonParser {
 
       BackPressAgentAction -> BackPressAgentAction()
 
+      GoHomeAgentAction -> GoHomeAgentAction()
+
       KeyPressAgentAction -> {
         val text = textArgument(argumentsJsonData)
         KeyPressAgentAction(text)

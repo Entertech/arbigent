@@ -594,6 +594,42 @@ public class BackPressAgentAction : ArbigentAgentAction {
   }
 }
 
+/**
+ * Return to the device home screen / launcher. Cross-platform via the HOME key:
+ * on iOS this triggers XCUIDevice.shared.press(.home) (the only reliable way to
+ * leave an app, since iOS BackPress is an in-app edge swipe and a large Swipe-UP
+ * does not consistently reach SpringBoard); on Android it sends KEYCODE_HOME.
+ * Critical for recovery: without it, an agent that taps into the wrong app gets
+ * trapped with no way back to a known starting point.
+ */
+@Serializable
+public class GoHomeAgentAction : ArbigentAgentAction {
+  override val actionName: String = Companion.actionName
+
+  override fun stepLogText(): String {
+    return "Go to home screen"
+  }
+
+  override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
+    runInput.device.executeActions(
+      actions = listOf(
+        MaestroCommand(
+          pressKeyCommand = PressKeyCommand(KeyCode.HOME)
+        )
+      ),
+    )
+  }
+
+  public companion object : AgentActionType {
+    override val actionName: String = "GoHome"
+
+    override fun actionDescription(): String =
+      "Return to the device home screen / launcher. Use this to escape an app you opened by mistake, or to get back to a known starting point before navigating again."
+
+    override fun arguments(): List<AgentActionType.Argument> = emptyList()
+  }
+}
+
 @Serializable
 public class ScrollAgentAction : ArbigentAgentAction {
   override val actionName: String = "Scroll"
