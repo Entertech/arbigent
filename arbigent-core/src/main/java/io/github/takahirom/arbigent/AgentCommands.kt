@@ -615,7 +615,8 @@ public class ScrollAgentAction : ArbigentAgentAction {
   public companion object : AgentActionType {
     override val actionName: String = "Scroll"
 
-    override fun actionDescription(): String = "Scroll down on the current screen"
+    override fun actionDescription(): String =
+      "Scroll down through the current scrollable content (lists, reviews, long pages). PREFER this over Swipe when reading or advancing through content: it stays within the page and will not dismiss a modal sheet."
 
     override fun arguments(): List<AgentActionType.Argument> = emptyList()
   }
@@ -643,7 +644,7 @@ public data class SwipeAgentAction(val direction: SwipeDirection) : ArbigentAgen
     override val actionName: String = "Swipe"
 
     override fun actionDescription(): String =
-      "Swipe in a direction. Use UP to move further down a scrollable page; use DOWN to move back up after overscrolling."
+      "Swipe in a direction for paging/carousels or to reveal off-screen UI. To scroll through content (lists, reviews, long pages) prefer Scroll instead: on iOS a large Swipe inside a modal sheet (e.g. an App Store product page) can dismiss the sheet and lose your place. UP moves content up; DOWN moves back up."
 
     override fun arguments(): List<AgentActionType.Argument> =
       listOf(

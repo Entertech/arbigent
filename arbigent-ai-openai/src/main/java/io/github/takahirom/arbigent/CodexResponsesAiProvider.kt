@@ -174,6 +174,7 @@ For MCP actions, put tool arguments in "arguments" as a compact JSON object stri
 Use ClickWithIndex when a visible target exists in ELEMENTS.
 When a target is clearly VISIBLE in the screenshot but has NO matching entry in ELEMENTS (e.g. iOS home-screen app icons, games/canvas, or native system dialogs), use ClickAtCoordinates with normalized coordinates "nx,ny" as fractions in [0,1] (top-left origin, screen center = "0.5,0.5"). Always prefer ClickWithIndex whenever the target appears in ELEMENTS; only fall back to ClickAtCoordinates when it does not.
 If a visible target is only partially visible or close to a screen edge, navigation bar, or tab bar, use Scroll or Swipe to center it before clicking.
+To read or advance through long content or lists (e.g. reviews, settings, search results), use Scroll, NOT Swipe: on iOS a Swipe inside a modal sheet (such as an App Store product page) can dismiss the sheet and send you back to the previous screen.
 Before choosing GoalAchieved, verify every explicit constraint in GOAL and write the evidence in arbigent-memo. If the current screen is a plausible but unverified leftover from a previous task, continue navigating instead of finishing.
 """.trimIndent()
   }
@@ -324,9 +325,49 @@ internal object CodexDecisionFormat {
     return try {
       json.parseToJsonElement(text).jsonObject
     } catch (e: Exception) {
-      val start = text.indexOf('{')
-      val end = text.lastIndexOf('}')
-      if (start >= 0 && end > start) json.parseToJsonElement(text.substring(start, end + 1)).jsonObject else throw e
+      // The model sometimes emits more than one JSON object back-to-back
+      // (e.g. `{...}{...}`), which makes a whole-string parse fail with
+      // "Expected EOF". Extract the FIRST balanced top-level object and parse
+      // just that. (indexOf('{')..lastIndexOf('}') would keep both objects and
+      // still fail.)
+      val firstObject = firstBalancedJsonObject(text)
+        ?: throw e
+      json.parseToJsonElement(firstObject).jsonObject
     }
+  }
+
+  /**
+   * Returns the substring of the first balanced, top-level `{...}` object in
+   * [text], honoring strings/escapes so braces inside string values don't throw
+   * off the brace depth. Returns null if no balanced object is found.
+   */
+  private fun firstBalancedJsonObject(text: String): String? {
+    val start = text.indexOf('{')
+    if (start < 0) return null
+    var depth = 0
+    var inString = false
+    var escaped = false
+    var i = start
+    while (i < text.length) {
+      val c = text[i]
+      if (inString) {
+        when {
+          escaped -> escaped = false
+          c == '\\' -> escaped = true
+          c == '"' -> inString = false
+        }
+      } else {
+        when (c) {
+          '"' -> inString = true
+          '{' -> depth++
+          '}' -> {
+            depth--
+            if (depth == 0) return text.substring(start, i + 1)
+          }
+        }
+      }
+      i++
+    }
+    return null
   }
 }
