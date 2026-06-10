@@ -908,6 +908,8 @@ public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
     // known starting point. Without this, a mis-tap can trap the agent in an app
     // it cannot exit (iOS BackPress is an in-app edge swipe, not a home gesture).
     GoHomeAgentAction,
+    // Direct app launch/switch by package/bundle id — skips launcher navigation.
+    LaunchAppAgentAction,
     KeyPressAgentAction,
     ScrollAgentAction,
     SwipeAgentAction,

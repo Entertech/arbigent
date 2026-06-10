@@ -198,7 +198,11 @@ public sealed interface ArbigentAvailableDevice {
         // failure; `installer` itself stays non-null for the wiring below.
         xcTestInstaller = installer
         val device = util.LocalIOSDevice().listDeviceViaDeviceCtl(config.deviceId)
-        val deviceController = DeviceControlIOSDevice(deviceId = device.identifier)
+        // Wrap the stub controller: Maestro's DeviceControlIOSDevice is all
+        // TODO()s, which kill the process (NotImplementedError is an Error).
+        // The wrapper implements launch/uninstall/clearAppState via devicectl
+        // and neutralizes the lethal pre-launch setPermissions call.
+        val deviceController = ArbigentDevicectlIOSDevice(device.identifier, DeviceControlIOSDevice(deviceId = device.identifier))
         val xcTestDriverClient = XCTestDriverClient(
           installer = installer,
           client = XCTestClient(config.host, config.port),

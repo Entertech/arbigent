@@ -109,6 +109,19 @@ class AgentActionJsonParserTest {
   }
 
   @Test
+  fun `parses launch app action with app id`() {
+    val action = AgentActionJsonParser.parseAgentAction(
+      agentActionList = listOf(LaunchAppAgentAction),
+      action = "LaunchApp",
+      argumentsJsonData = JsonObject(mapOf("text" to JsonPrimitive(" com.apple.AppStore "))),
+      elements = emptyElements(),
+      mcpTools = null,
+    )
+
+    assertEquals(LaunchAppAgentAction("com.apple.AppStore"), action)
+  }
+
+  @Test
   fun `goal action without text argument`() {
     val action = AgentActionJsonParser.parseAgentAction(
       agentActionList = listOf(GoalAchievedAgentAction),

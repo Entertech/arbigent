@@ -124,11 +124,21 @@ claims verified against primary sources (papers / official repos); URLs inline.
    feedback message.
 5. **LaunchApp(packageName/name) action** (+ foreground-app name injected as
    one-line screen_info each step). Kills 2–4 launcher-navigation steps.
-   *screen_info half shipped*: foreground app is injected as an AI hint each
+   *Shipped (both halves)*: foreground app is injected as an AI hint each
    step — Android via one cached dumpsys call (Maestro drops the UIAutomator
    `package` attribute), iOS extracted free from the XCTest hierarchy (app
    AXElement label). Best-effort: omitted on iOS SpringBoard rather than
    guessed. Cache keys unaffected (hints are outside both hashes).
+   LaunchApp action shipped too: non-destructive launch/switch by app id
+   (stopApp=false, no state clearing, permissions untouched), prompt-steered
+   to be used when the target app's id is known and the icon isn't visible.
+   On iOS real devices this exposed and fixed a lethal Maestro stub:
+   DeviceControlIOSDevice is all TODO()s and NotImplementedError (an Error)
+   escaped every handler and killed the process — now wrapped by
+   ArbigentDevicectlIOSDevice (devicectl-backed launch/uninstall/clearAppState,
+   no-op setPermissions) plus an action-level Error->IllegalStateException
+   guard. Verified: from inside Settings, "launch com.apple.AppStore" ran
+   LaunchApp end-to-end in 2 steps / 11.7s.
 6. **Trajectory replay cache** for scenario reruns: persist the successful
    action sequence keyed by per-step screen fingerprint; replay while
    preconditions hold, fall back to live agent on first divergence.

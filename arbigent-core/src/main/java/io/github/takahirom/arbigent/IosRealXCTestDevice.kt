@@ -254,3 +254,46 @@ internal object IosRealDeviceCatalog {
 
   private const val PROCESS_TIMEOUT_SECONDS = 120L
 }
+
+/**
+ * devicectl-backed deviceController for iOS REAL devices.
+ *
+ * Maestro's DeviceControlIOSDevice is a pure stub — every method is
+ * TODO("Not yet implemented"), and TODO() throws NotImplementedError, which is
+ * an Error: it sails through Orchestra's catch(Exception) and Arbigent's action
+ * handling and kills the whole process. LocalIOSDevice routes launch /
+ * setPermissions / uninstall / clearAppState (among others) to the
+ * deviceController, so e.g. a LaunchApp command on a real device died inside
+ * the pre-launch setPermissions call before even attempting the launch.
+ *
+ * This wrapper delegates to the stub but overrides what we can actually do via
+ * `xcrun devicectl` (the same ArbigentDevicectlClient the mirror backend uses):
+ * - launch: devicectl process launch (--terminate-existing, so on real iOS a
+ *   LaunchApp of an already-running app RELAUNCHES it; devicectl cannot
+ *   activate without terminating)
+ * - setPermissions: no-op — devicectl cannot set permissions; LocalIOSDevice
+ *   calls xcTestDevice.setPermissions right after, which handles what it can
+ * - uninstall / clearAppState: devicectl equivalents
+ */
+internal class ArbigentDevicectlIOSDevice(
+  deviceId: String,
+  private val stub: device.IOSDevice,
+) : device.IOSDevice by stub {
+  private val client = ArbigentDevicectlClient(deviceId)
+
+  override fun launch(id: String, launchArguments: Map<String, Any>) {
+    client.launch(id)
+  }
+
+  override fun setPermissions(id: String, permissions: Map<String, String>) {
+    arbigentDebugLog("setPermissions($id) ignored on real iOS device (devicectl cannot set permissions)")
+  }
+
+  override fun uninstall(id: String) {
+    client.uninstall(id)
+  }
+
+  override fun clearAppState(id: String) {
+    client.clearAppState(id)
+  }
+}

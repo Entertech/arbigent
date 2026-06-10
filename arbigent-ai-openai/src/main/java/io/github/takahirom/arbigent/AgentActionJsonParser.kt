@@ -134,6 +134,14 @@ internal object AgentActionJsonParser {
 
       GoHomeAgentAction -> GoHomeAgentAction()
 
+      LaunchAppAgentAction -> {
+        val appId = textArgument(argumentsJsonData).trim()
+        if (appId.isBlank()) {
+          throw IllegalArgumentException("text should be an app id (package name / bundle id) for ${LaunchAppAgentAction.actionName}")
+        }
+        LaunchAppAgentAction(appId)
+      }
+
       KeyPressAgentAction -> {
         val text = textArgument(argumentsJsonData)
         KeyPressAgentAction(text)

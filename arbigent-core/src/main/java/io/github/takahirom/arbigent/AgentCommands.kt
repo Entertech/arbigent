@@ -630,6 +630,66 @@ public class GoHomeAgentAction : ArbigentAgentAction {
   }
 }
 
+/**
+ * Launch (or switch to) an app directly by its platform id — Android package
+ * name or iOS bundle identifier. Skips the GoHome -> hunt-the-icon navigation
+ * entirely (UI-TARS open_app / AutoGLM Launch / Mobile Use launch_app all ship
+ * this for the same reason). Non-destructive by design: stopApp=false activates
+ * a running app instead of restarting it, no state/keychain clearing, and
+ * permissions are left untouched (Maestro's launch default would otherwise
+ * rewrite them to all-allow). A wrong id throws MaestroException, which the
+ * action loop converts into step feedback so the model falls back to manual
+ * navigation.
+ */
+@Serializable
+public data class LaunchAppAgentAction(val appId: String) : ArbigentAgentAction {
+  override val actionName: String = Companion.actionName
+
+  override fun stepLogText(): String {
+    return "Launch app: $appId"
+  }
+
+  override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
+    try {
+      runInput.device.executeActions(
+        actions = listOf(
+          MaestroCommand(
+            launchAppCommand = LaunchAppCommand(
+              appId = appId,
+              stopApp = false,
+              permissions = emptyMap(),
+            )
+          )
+        ),
+      )
+    } catch (e: NotImplementedError) {
+      // A backend whose launch path hits a Maestro TODO() stub throws
+      // NotImplementedError — an Error, which would otherwise escape every
+      // Exception handler and kill the run. Convert it into the catchable
+      // failure the agent loop turns into step feedback.
+      throw IllegalStateException(
+        "LaunchApp is not supported on this device backend. Navigate to the app manually instead.", e
+      )
+    }
+  }
+
+  public companion object : AgentActionType {
+    override val actionName: String = "LaunchApp"
+
+    override fun actionDescription(): String =
+      "Launch or switch to an app directly by its platform app id. Much faster than navigating the home screen. If the launch fails (unknown id), fall back to navigating via the launcher."
+
+    override fun arguments(): List<AgentActionType.Argument> =
+      listOf(
+        AgentActionType.Argument(
+          name = "text",
+          type = "string",
+          description = "The app id: an Android package name (e.g. \"com.android.vending\") or an iOS bundle identifier (e.g. \"com.apple.AppStore\"). Use a well-known id you are confident about; do NOT guess obscure ids — navigate manually instead."
+        )
+      )
+  }
+}
+
 @Serializable
 public class ScrollAgentAction : ArbigentAgentAction {
   override val actionName: String = "Scroll"
