@@ -28,6 +28,7 @@ public class ArbigentContextHolder(
     public val feedback: String? = null,
     public val memo: String? = null,
     public val imageDescription: String? = null,
+    public val progressState: String? = null,
     public val uiTreeStrings: ArbigentUiTreeStrings? = null,
     public val aiRequest: String? = null,
     public val aiResponse: String? = null,
@@ -88,9 +89,19 @@ public class ArbigentContextHolder(
     val stepsToInclude = aiOptions?.historicalStepLimit?.let { count ->
       allSteps.takeLast(count)
     } ?: allSteps
-    return stepsToInclude.map { (index, turn) ->
+    val history = stepsToInclude.joinToString("\n") { (index, turn) ->
       "Step ${index + 1}. \n" + turn.text()
-    }.joinToString("\n")
+    }
+    // Surface the most recent non-blank progress_state as the single current
+    // running state, so the model updates it incrementally instead of re-deriving
+    // it from each (shifting) screen. Computed over all steps, not the windowed
+    // slice, so it survives historicalStepLimit truncation.
+    val latestProgressState = steps().lastOrNull { !it.progressState.isNullOrBlank() }?.progressState
+    return if (latestProgressState.isNullOrBlank()) {
+      history
+    } else {
+      history + "\n\n<CURRENT_PROGRESS_STATE>\n$latestProgressState\n</CURRENT_PROGRESS_STATE>"
+    }
   }
 
   public fun prompt(

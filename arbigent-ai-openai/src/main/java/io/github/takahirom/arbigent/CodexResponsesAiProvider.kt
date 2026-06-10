@@ -91,7 +91,8 @@ internal class CodexResponsesAi(
     val instructions = buildInstructions(decisionInput)
     val userText = buildUserText(decisionInput)
     val schema = CodexDecisionFormat.outputSchema(decisionInput.agentActionTypes, decisionInput.mcpTools)
-    val requestBody = buildRequestBody(instructions, userText, annotated, schema)
+    val previousImage = previousScrollAnnotatedImage(decisionInput)
+    val requestBody = buildRequestBody(instructions, userText, annotated, schema, previousImage)
 
     val startedAt = TimeProvider.get().currentTimeMillis()
     val message = postForOutputText(requestBody, decisionInput.requestUuid)
@@ -116,6 +117,7 @@ internal class CodexResponsesAi(
         action = action,
         imageDescription = arguments[ArbigentAiAnswerItems.ImageDescription.key]?.jsonPrimitive?.content ?: "",
         memo = arguments[ArbigentAiAnswerItems.Memo.key]?.jsonPrimitive?.content ?: "",
+        progressState = arguments[ArbigentAiAnswerItems.ProgressState.key]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
         aiRequest = userText,
         aiResponse = message,
         screenshotFilePath = decisionInput.screenshotFilePath,
@@ -176,6 +178,7 @@ When a target is clearly VISIBLE in the screenshot but has NO matching entry in 
 If a visible target is only partially visible or close to a screen edge, navigation bar, or tab bar, use Scroll or Swipe to center it before clicking.
 To read or advance through long content or lists (e.g. reviews, settings, search results), use Scroll, NOT Swipe: on iOS a Swipe inside a modal sheet (such as an App Store product page) can dismiss the sheet and send you back to the previous screen.
 If you opened the wrong app or got stuck somewhere you cannot navigate out of, use GoHome to return to the home screen / launcher and start the navigation over, rather than repeatedly pressing back.
+For tasks that count or collect items across a scrolling list (e.g. "the 5th review"), maintain arbigent-progress-state: copy the previous CURRENT_PROGRESS_STATE and update it INCREMENTALLY (an ordered list keyed by a stable id such as author/title) — do not recount from scratch each step, and stop once the target index is reached. When a "Previous screen" image is provided, use it to avoid double-counting items that overlap between the two screens.
 Before choosing GoalAchieved, verify every explicit constraint in GOAL and write the evidence in arbigent-memo. If the current screen is a plausible but unverified leftover from a previous task, continue navigating instead of finishing.
 """.trimIndent()
   }
@@ -192,8 +195,9 @@ Before choosing GoalAchieved, verify every explicit constraint in GOAL and write
     )
   }
 
-  private fun buildRequestBody(instructions: String, userText: String, image: File, schema: JsonObject): String {
+  private fun buildRequestBody(instructions: String, userText: String, image: File, schema: JsonObject, previousImage: File? = null): String {
     val imageBase64 = Base64.getEncoder().encodeToString(image.readBytes())
+    val previousBase64 = previousImage?.let { Base64.getEncoder().encodeToString(it.readBytes()) }
     return buildJsonObject {
       put("model", modelName)
       put("instructions", instructions)
@@ -204,6 +208,22 @@ Before choosing GoalAchieved, verify every explicit constraint in GOAL and write
             addJsonObject {
               put("type", "input_text")
               put("text", userText)
+            }
+            // Visual continuity after a scroll/swipe/drag: show the previous screen
+            // first so the model can cross-reference overlapping content.
+            if (previousBase64 != null) {
+              addJsonObject {
+                put("type", "input_text")
+                put("text", "Previous screen (before your last scroll/swipe), for visual continuity — use it to avoid double-counting overlapping items:")
+              }
+              addJsonObject {
+                put("type", "input_image")
+                put("image_url", "data:image/png;base64,$previousBase64")
+              }
+              addJsonObject {
+                put("type", "input_text")
+                put("text", "Current screen:")
+              }
             }
             addJsonObject {
               put("type", "input_image")
@@ -308,6 +328,7 @@ internal object CodexDecisionFormat {
       putJsonArray("required") {
         add("action"); add("text"); add("arguments")
         add(ArbigentAiAnswerItems.Memo.key); add(ArbigentAiAnswerItems.ImageDescription.key)
+        add(ArbigentAiAnswerItems.ProgressState.key)
       }
       putJsonObject("properties") {
         putJsonObject("action") {
@@ -318,6 +339,7 @@ internal object CodexDecisionFormat {
         putJsonObject("arguments") { put("type", "string"); put("description", "Compact JSON object string for MCP tool arguments, or \"{}\" for ordinary Arbigent actions.") }
         putJsonObject(ArbigentAiAnswerItems.Memo.key) { put("type", "string"); put("description", "Brief reasoning memo for the selected action.") }
         putJsonObject(ArbigentAiAnswerItems.ImageDescription.key) { put("type", "string"); put("description", "Brief description of the visible screen.") }
+        putJsonObject(ArbigentAiAnswerItems.ProgressState.key) { put("type", "string"); put("description", ArbigentAiAnswerItems.ProgressState.description) }
       }
     }
   }

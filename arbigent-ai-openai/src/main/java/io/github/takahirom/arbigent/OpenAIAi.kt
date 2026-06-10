@@ -47,7 +47,12 @@ internal enum class ArbigentAiAnswerItems(
   val description: String,
 ) {
   Memo("arbigent-memo", "string", "Memo for the agent"),
-  ImageDescription("arbigent-image-description", "string", "Description of what is visible in the image");
+  ImageDescription("arbigent-image-description", "string", "Description of what is visible in the image"),
+  ProgressState(
+    "arbigent-progress-state",
+    "string",
+    "Running structured state you carry across steps for multi-step or counting tasks. Copy the previous CURRENT_PROGRESS_STATE and update it INCREMENTALLY — never recount from scratch. For counting items in a scrolling list, keep an ordered list keyed by a stable identifier (e.g. [{idx:1,author:'A'},{idx:2,author:'B'}]); append only newly-seen items and stop once the target index is reached. Use an empty string when there is no multi-step state to track."
+  );
 
   fun toJsonString(): String {
     return """"$key": {
@@ -68,6 +73,23 @@ internal enum class ArbigentAiAnswerItems(
       )
     )
   }
+}
+
+/**
+ * The previous step's annotated screenshot, but only when the previous action was
+ * a scroll/swipe/drag — i.e. when content shifted and visual continuity actually
+ * helps (counting items across a scroll). Returns null otherwise so navigation
+ * steps don't pay the extra-image token/latency cost. Returns null if the file is
+ * missing.
+ */
+internal fun previousScrollAnnotatedImage(decisionInput: ArbigentAi.DecisionInput): File? {
+  val previous = decisionInput.contextHolder.steps().lastOrNull() ?: return null
+  val movedContent = when (previous.agentAction) {
+    is ScrollAgentAction, is SwipeAgentAction, is DragAgentAction -> true
+    else -> false
+  }
+  if (!movedContent) return null
+  return File(previous.screenshotFilePath).toAnnotatedFile().takeIf { it.exists() }
 }
 
 internal class Curl(
@@ -251,19 +273,40 @@ public class OpenAIAi @OptIn(ArbigentInternalApi::class) constructor(
       ),
       ChatMessage(
         role = "user",
-        contents = listOf(
-          Content(
-            type = "image_url",
-            imageUrl = ImageUrl(
-              url = "data:${decisionInput.aiOptions?.imageFormat?.mimeType ?: ImageFormat.PNG.mimeType};base64,$imageBase64",
-              detail = imageDetail
+        contents = buildList {
+          // Visual continuity: when the previous action was a scroll/swipe/drag,
+          // include the previous (annotated) screen so the model can cross-reference
+          // overlapping content and avoid double-counting across the scroll.
+          val previousImage = previousScrollAnnotatedImage(decisionInput)
+          if (previousImage != null) {
+            add(Content(type = "text", text = "Previous screen (before your last scroll/swipe), for visual continuity — use it to avoid double-counting overlapping items:"))
+            add(
+              Content(
+                type = "image_url",
+                imageUrl = ImageUrl(
+                  url = "data:${ImageFormat.PNG.mimeType};base64," + previousImage.getResizedIamgeBase64(1.0F),
+                  detail = imageDetail
+                )
+              )
             )
-          ),
-          Content(
-            type = "text",
-            text = prompt
-          ),
-        )
+            add(Content(type = "text", text = "Current screen:"))
+          }
+          add(
+            Content(
+              type = "image_url",
+              imageUrl = ImageUrl(
+                url = "data:${decisionInput.aiOptions?.imageFormat?.mimeType ?: ImageFormat.PNG.mimeType};base64,$imageBase64",
+                detail = imageDetail
+              )
+            )
+          )
+          add(
+            Content(
+              type = "text",
+              text = prompt
+            )
+          )
+        }
       )
     )
     val toolDefinitions = buildTools(agentActionTypes = agentActionTypes, mcpTools = decisionInput.mcpTools)
@@ -423,6 +466,7 @@ public class OpenAIAi @OptIn(ArbigentInternalApi::class) constructor(
         action = action,
         imageDescription = argumentsJsonData[ArbigentAiAnswerItems.ImageDescription.key]?.jsonPrimitive?.content ?: "",
         memo = argumentsJsonData[ArbigentAiAnswerItems.Memo.key]?.jsonPrimitive?.content ?: "",
+        progressState = argumentsJsonData[ArbigentAiAnswerItems.ProgressState.key]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
         aiRequest = messages.toHumanReadableString(tools = toolDefinitions),
         aiResponse = message.toString(),
         screenshotFilePath = screenshotFilePath,
