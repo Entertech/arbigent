@@ -62,6 +62,24 @@ conclusion is validated commercially by GPT Driver (below).
 - **droidrun → mobilerun** (8.5k★): Android via accessibility Portal; iOS
   real-device portal exists since ~v0.5.5 but is embryonic (50★, 42 commits).
   No assertion DSL / decision cache / reports.
+
+  ios-portal detail (verified June 2026, repo + docs.mobilerun.ai IOSDriver):
+  XCTest-based HTTP server (SwiftUI host app, port 6643, device.sh + iproxy,
+  MIT, no releases). Endpoints: /state (compressed a11y tree string + app
+  context + keyboard status; single 4s window, **no retry**), /vision/screenshot,
+  /inputs/launch, /gestures/tap (single/double/long), /gestures/swipe,
+  /gestures/back, /inputs/type, /inputs/key (home/volume/action/camera).
+  Framework driver exposes even less: press_button("home") ONLY, and explicitly
+  **no app termination, no install, no drag(), no orientation, no permission
+  handling**; app list is a hardcoded humanized mapping ("device isn't queried
+  for installed apps"). vs our Maestro-fork runner which additionally has:
+  terminateApp (test isolation), isScreenStatic settle loop (configurable),
+  setPermissions, setOrientation, eraseText, keyboard state route, lock button,
+  full AXElement hierarchy with frames (enabling set-of-marks + tree-hash
+  caching), devicectl side-channel (launch/terminate/uninstall), plus Maestro
+  Orchestra command mapping (percent taps/swipes) for free. Their one nice
+  idea worth borrowing: /state returns tree + foreground app + keyboard status
+  in a single call (we fetch viewHierarchy and runningApp separately).
 - **mobile-next/mobile-mcp** (5.2k★): MCP plumbing with genuine iOS real-device
   support (WDA) — a building block for a host agent, zero test features.
 - **Maestro upstream**: real-iOS local support **still unresolved after 3 years**
