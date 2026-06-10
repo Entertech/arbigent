@@ -124,6 +124,11 @@ claims verified against primary sources (papers / official repos); URLs inline.
    feedback message.
 5. **LaunchApp(packageName/name) action** (+ foreground-app name injected as
    one-line screen_info each step). Kills 2–4 launcher-navigation steps.
+   *screen_info half shipped*: foreground app is injected as an AI hint each
+   step — Android via one cached dumpsys call (Maestro drops the UIAutomator
+   `package` attribute), iOS extracted free from the XCTest hierarchy (app
+   AXElement label). Best-effort: omitted on iOS SpringBoard rather than
+   guessed. Cache keys unaffected (hints are outside both hashes).
 6. **Trajectory replay cache** for scenario reruns: persist the successful
    action sequence keyed by per-step screen fingerprint; replay while
    preconditions hold, fall back to live agent on first divergence.

@@ -226,6 +226,40 @@ public class MaestroDevice(
   // step. Invalidated after any UI-changing action and on reconnect.
   @Volatile private var cachedHierarchy: ViewHierarchy? = null
 
+  // Foreground-app hint, computed once per hierarchy snapshot. Keyed by the root
+  // TreeNode's identity (ViewHierarchy is a value class, so it shares
+  // cachedHierarchy's lifecycle through its root reference).
+  @Volatile private var foregroundHintCache: Pair<TreeNode, String?>? = null
+
+  /**
+   * One-line "screen_info" for the prompt: which app is in the foreground.
+   * AutoGLM-style cheap state — disambiguates loading screens and lets the model
+   * notice it is in the wrong app immediately (GoHome recovery) instead of
+   * inferring the app from pixels. Injected as an AI hint, so it reaches the
+   * prompt of every provider without touching the cache key (neither the
+   * UI-tree hash nor the context hash includes hints).
+   */
+  private fun foregroundAppHint(viewHierarchy: ViewHierarchy): String? {
+    foregroundHintCache?.let { (root, hint) -> if (root === viewHierarchy.root) return hint }
+    val app = runCatching {
+      when (maestro.cachedDeviceInfo.platform) {
+        // Maestro's Android hierarchy drops the UIAutomator `package` attribute,
+        // so ask the device once per step (cheap dumpsys, cached with this snapshot).
+        Platform.ANDROID -> (availableDevice as? ArbigentAvailableDevice.Android)?.foregroundPackage()
+        // The XCTest runner snapshots the foreground app: the root (SpringBoard
+        // branch) or its first child (app branch) is the app's AXElement whose
+        // label — mapped to accessibilityText — is the app display name.
+        Platform.IOS -> (listOf(viewHierarchy.root) + viewHierarchy.root.children.take(1))
+          .firstNotNullOfOrNull { node -> node.attributes["accessibilityText"]?.takeIf { it.isNotBlank() } }
+        else -> null
+      }
+    }.getOrNull()
+    val hint = app?.let { "Current foreground app: $it" }
+    foregroundHintCache = viewHierarchy.root to hint
+    hint?.let { arbigentDebugLog(it) }
+    return hint
+  }
+
   private fun currentHierarchy(): ViewHierarchy {
     cachedHierarchy?.let { return it }
     val vh: ViewHierarchy
@@ -303,7 +337,7 @@ public class MaestroDevice(
           optimizedTreeString = viewHierarchy.toOptimizedString(
             deviceInfo = maestro.cachedDeviceInfo
           ),
-          aiHints = viewHierarchy.root.findAllAiHints()
+          aiHints = viewHierarchy.root.findAllAiHints() + listOfNotNull(foregroundAppHint(viewHierarchy))
         )
       } catch (e: ArbigentElementList.NodeInBoundsNotFoundException) {
         arbigentDebugLog("NodeInBoundsNotFoundException. Retry $it")

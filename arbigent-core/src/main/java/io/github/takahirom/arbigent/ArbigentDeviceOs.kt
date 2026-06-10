@@ -38,6 +38,17 @@ public sealed interface ArbigentAvailableDevice {
   public class Android(private val dadb: Dadb) : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Android
     override val name: String = dadb.toString()
+
+    /**
+     * Foreground app package, best effort. Maestro's Android hierarchy drops the
+     * UIAutomator `package` attribute, so this is fetched with one dumpsys call
+     * (device-side grep keeps the transfer small). Returns null on any failure.
+     */
+    internal fun foregroundPackage(): String? = runCatching {
+      val out = dadb.shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'").output
+        .ifBlank { dadb.shell("dumpsys activity activities | grep ResumedActivity").output }
+      parseForegroundPackage(out)
+    }.getOrNull()
     override fun connectToDevice(): ArbigentDevice {
       val driver = AndroidDriver(
         dadb,
@@ -242,6 +253,17 @@ public sealed interface ArbigentAvailableDevice {
   }
 
   public fun connectToDevice(): ArbigentDevice
+}
+
+/**
+ * Extracts the foreground package from dumpsys output. Handles the common forms:
+ *   mCurrentFocus=Window{ed2bb9f u0 com.foo.bar/com.foo.bar.MainActivity}
+ *   mFocusedApp=ActivityRecord{17c0837 u0 com.foo.bar/.MainActivity t328}
+ *   ResumedActivity: ActivityRecord{... u0 com.foo.bar/.MainActivity t12}
+ */
+internal fun parseForegroundPackage(dumpsysOutput: String): String? {
+  val regex = Regex("""(?:mCurrentFocus|mFocusedApp|ResumedActivity)[^\n]*?\su(?:ser)?\d+\s+([a-zA-Z0-9_.]+)/""")
+  return regex.find(dumpsysOutput)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
 }
 
 internal fun xctestLogsDir(): File {
