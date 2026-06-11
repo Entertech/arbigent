@@ -1290,12 +1290,25 @@ private suspend fun step(
     }
   }
 
+  // Loop detection (code-level, zero LLM cost): if this exact screen has been
+  // visited >=2 times before, inject a forced-pivot hint listing the actions
+  // already tried here. Delivered as a transient AI hint: it reaches every
+  // provider's prompt but stays outside both cache hashes (the uiTreeHash is
+  // computed above from the unmodified tree, and context() ignores hints).
+  val revisitHint = revisitedScreenHintOrNull(contextHolder.steps(), uiTreeStrings.optimizedTreeString)
+  val decisionUiTreeStrings = if (revisitHint != null) {
+    arbigentInfoLog(revisitHint)
+    uiTreeStrings.copy(aiHints = uiTreeStrings.aiHints + revisitHint)
+  } else {
+    uiTreeStrings
+  }
+
   val decisionInput = ArbigentAi.DecisionInput(
     stepId = stepId,
     contextHolder = contextHolder,
     formFactor = deviceFormFactor,
     elements = elements,
-    uiTreeStrings = uiTreeStrings,
+    uiTreeStrings = decisionUiTreeStrings,
     requestUuid = requestUuid,
     apiCallJsonLFilePath = decisionJsonlFilePath,
     focusedTreeString = if (deviceFormFactor.isTv()) {
