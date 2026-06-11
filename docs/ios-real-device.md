@@ -96,3 +96,26 @@ export ARBIGENT_IOS_MIRROR_MCP_COMMAND=/path/to/mirroir-mcp
 ```
 
 Do not use mirror as proof that the XCTest-backed Arbigent flow is working. It exercises a different observation model and does not validate view-tree retrieval.
+
+## macOS 27 / Xcode 27 outlook (WWDC 2026 research, 3 days post-keynote)
+
+- **Keep the XCTest runner — devicectl gained zero UI-automation primitives.**
+  Xcode 27 release notes + WWDC session 260 enumerate only: simulator reboot
+  parity, `device rename`, settings change (dark/light), info/diagnostics.
+  No screenshot, no input injection, no AX-tree dump, no activate-without-
+  terminate, no tunnel/port-forward. Appium reached the same verdict
+  (appium/appium#22368). All 8 runner capabilities remain XCUITest-only.
+- The new **Device Hub** (replaces Devices&Simulators AND Simulator.app;
+  CoreDeviceService now owns simulators) has live screen + touch + keyboard +
+  screenshots for REAL devices — but GUI-only, no CLI. Xcode's internal coding
+  agents synthesize touches/screenshots on SIMULATORS only. The real-device
+  capability gap is policy, not technology — re-check at beta 2/3.
+- **Toolchain prep when adopting Xcode 27**: bump runner
+  IPHONEOS_DEPLOYMENT_TARGET to >=15 (WDA needed the same); Xcode 27 cannot
+  run tests on iOS 15/16 devices (keep an Xcode 26 lane if needed); set the
+  new Test Plan "UI test crash severity" to warning/off so an app-under-test
+  crash no longer kills the long-lived runner session; audit anything touching
+  Xcode-internal framework paths (SimulatorKit moved).
+- **iproxy stays** (no Apple tunnel CLI); fix orphans on our side (process
+  group + kill-on-exit) — one orphan already bit us by holding port 22087
+  after a crash.

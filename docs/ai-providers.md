@@ -124,3 +124,29 @@ OpenAI function-call responses and Codex JSON responses both go through the shar
 Completion validation is provider-agnostic. When any provider returns `GoalAchieved`, the core executor runs the configured `ArbigentGoalCompletionVerifier` before marking the task successful.
 
 The default verifier accepts the provider decision for backward compatibility. Stricter runners can install a verifier that checks current UI evidence, screenshot-derived evidence, previous steps, or another model-backed judgment. A rejected completion is recorded as a feedback step and the agent continues instead of returning a false success.
+
+## Model selection notes (June 2026 research)
+
+- **"Codex Spark" (gpt-5.3-codex-spark) is text-only** — 1000+ tok/s on Cerebras,
+  ChatGPT-Pro/Codex-only, no image input → cannot ground. gpt-5.5 stays the only
+  vision-capable codex-backend option. Possible future role: fast text-only
+  assertion/planner layer, never the per-step vision decider.
+- **gemini-3-flash-preview stays the API baseline, but is at-risk**: still
+  preview (never GA'd), community-reported grounding regressions (Jan 2026),
+  and gemini-3.5-flash is NOT an upgrade path (3x price, Computer Use
+  explicitly unsupported, no documented grounding gains).
+- **Challengers worth a local eval** (replay ~50-100 logged steps; public
+  leaderboards disagree across aggregators):
+  1. **Doubao-Seed-2.0-lite** (Volcengine Ark, OpenAI-compatible, China-native,
+     ~¥0.6/M in with 80%-off prompt-cache) — Midscene's field-tested default
+     for exactly this workload.
+  2. **Qwen3.7-Plus** (DashScope, GA 2026-06) — best budget-tier grounding
+     report (ScreenSpot-Pro ~79 vs Gemini 3 Flash 69.1); emits absolute pixel
+     coords → needs a per-model coordinate adapter (Midscene vlMode pattern).
+- **Self-host grounding tier**: GUI-Owl-1.5-8B (Qwen3-VL base) beats Gemini 3
+  Flash on ScreenSpot-Pro (71.1 vs 69.1), saturates mobile grounding (93.7
+  ScreenSpot-v2), ~1-1.5s/step on a 4090 via vLLM FP8, and emits 0-1000
+  normalized coords (= /1000 → our [0,1] contract). Do NOT build on UI-TARS:
+  UI-TARS-2 weights remain closed; 1.5-7B (~50 SSP, absolute-pixel coords) is
+  two generations behind. Two-stage zoom-in refinement adds +5-7 SSP points
+  for one extra local call.
