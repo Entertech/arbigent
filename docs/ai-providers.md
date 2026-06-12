@@ -150,3 +150,25 @@ The default verifier accepts the provider decision for backward compatibility. S
   UI-TARS-2 weights remain closed; 1.5-7B (~50 SSP, absolute-pixel coords) is
   two generations behind. Two-stage zoom-in refinement adds +5-7 SSP points
   for one extra local call.
+
+## Measured benchmark (June 2026, real devices, rigorous protocol)
+
+Task: home screen -> open store -> search WeChat -> detail page -> report first
+user review. Per run: force-stop store / kill foreground -> home, decision cache
+wiped (it lives in `arbigent-cache/` and its key has NO model name — never
+compare models without wiping it; CSV guard column must read 0 hits), single
+attempt (max-retry 0). 3 runs per platform per model (`scripts/model_bench.sh`).
+Answers cross-checked: every successful run independently reported the same
+review (Android: Samuel Fang; iOS: A6^rikun. 提升用户体验) — protocol validated.
+
+| model | success | mean duration | notes |
+|---|---|---|---|
+| doubao-seed-2.0-mini | 6/6 | 134.5s | fastest overall; plan-quota (no per-token cost) |
+| glm-5.1 | 6/6 | 136.6s | fewest steps (best per-step decisions); plan-quota |
+| gemini-3-flash-preview | 6/6 | 150.1s | prior baseline; pay-per-use |
+| doubao-seed-2.0-pro | 6/6 | 151.3s | most rigorous goal-verification memos; thinking overhead on Android |
+| doubao-seed-2.0-lite | 1/6 | — | eliminated: scroll-hunting loops; one FALSE success (opened WeCom, reported wrong app's review — also exposed a goal-verifier gap: app identity is not checked) |
+
+Volcengine agent-plan endpoint: `https://ark.cn-beijing.volces.com/api/plan/v3/`
+(OpenAI-compatible, Bearer ARK key) via `--ai-type openai --openai-endpoint ...`.
+deepseek-v4/kimi/minimax on the plan are text-only or unverified for vision.
