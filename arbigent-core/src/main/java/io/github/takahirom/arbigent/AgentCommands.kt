@@ -79,11 +79,14 @@ public data class ClickWithIndex(val index: Int) : ArbigentAgentAction {
         "Index $index is not available in ELEMENTS (size=${elements.elements.size}). " +
           "If the target is visible in the screenshot but missing from ELEMENTS, use ClickAtCoordinates."
       )
+    // Overlap-aware: tap a point the target actually owns, not a center that an
+    // element drawn on top has stolen. Returns the plain center when it is clear.
+    val (px, py) = clearTapPoint(element, elements.elements)
     runInput.device.executeActions(
       actions = listOf(
         MaestroCommand(
           tapOnPointV2Command = TapOnPointV2Command(
-            point = "${element.rect.centerX()},${element.rect.centerY()}"
+            point = "$px,$py"
           )
         )
       ),
