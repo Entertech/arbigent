@@ -134,3 +134,49 @@ Worth adopting from rivals:
   which are cheaper to build than to re-acquire determinism.
 - Adopting UI-TARS-desktop as harness: assistant runtime, no test features,
   desktop/browser only — wrong layer.
+
+## mobilerun/droidrun metrics & optimizations — deep dive (June 2026)
+
+### Their published metrics (and why they don't compare to ours)
+- **91.4% AndroidWorld** = self-reported, single run, 106/116 tasks, **Pixel 6
+  EMULATOR** (Android 13, frozen 2023 clock), **Gemini 2.5 Pro** planner. Lives
+  only on droidrun's own Google-Sheet leaderboard — llm-stats AndroidWorld board
+  shows 0 verified / 8 self-reported and droidrun isn't on it.
+- **Independent check (AIMultiple)**: with Claude 4.5 Sonnet they scored **43%**
+  (still won a 4-agent field: Mobile-Agent 29 / AutoDroid 14 / AppAgent 7).
+  Their only published latency: **78s/task, $0.075, 3.2k tokens** — on an *easy*
+  AndroidWorld task, emulator.
+- **iOS: zero metrics.** ios-portal (~51★) publishes no benchmark.
+- **Not comparable to our 6/6**: agent *task-completion on emulator* vs *test-
+  with-assertions on real devices*; different models. Swapping in a frontier
+  planner would raise our success rate too — and they have no iOS real-device
+  test stack, no deterministic replay, no assertions.
+
+### What they actually optimized (the worthwhile part)
+| Their technique | Source | arbigent status |
+|---|---|---|
+| **On-device Portal a11y service** — tree resident from a11y callbacks → serialize-and-return (not a fresh UIAutomator dump); persistent TCP socket; in-process gesture + custom IME | droidrun-portal | **structurally faster tree acquisition we lack** (we go Maestro→UIAutomator). Costs an APK install + accessibility grant. |
+| Screen-stabilization gate (poll 0.5s until stable) | benchmark/method | we settle on iOS; **add adaptive poll on Android** |
+| Two-tier manager+executor (planner + fast inner model) | droid_agent.py | **we're single-loop** — biggest architectural gap for long flows |
+| Tree-only / screenshot-on-demand (vision toggle) | fast_agent.py | we always screenshot; **add skip-image on tree-rich screens** |
+| Keyboard-subtree + <10%-visibility tree filters | detailed_filter.py | our optimizeTree2 only drops 0-area/status-bar; **cheap token win** |
+| Overlap-aware tap point (shift off center if occluded) | state.py/geometry.py | we tap rect.center blindly; **cheap accuracy win for dense lists** |
+| Guarded macro replay w/ FUZZY state match (Jaccard 0.85) + agent handoff | macro/replay.py | our uiTreeHash cache is EXACT (deterministic but drift-brittle); fuzzy mode could raise hit-rate |
+| `<add_memory>` model scratchpad | xml_parser | we have progress_state (comparable) |
+
+### Where we already match or beat them
+Host-side set-of-marks + tree optimization (more aggressive on bounds),
+per-screen hierarchy cache (collapses ~6 dumps→1), screenshot retry, device
+reconnect backoff, **percent-coordinate grounding** (cleaner than their explicit
+scale factors), foreground-app hint, and a **far more complete iOS layer** —
+their ios-portal lacks app-termination, drag, settle, permission handling, and
+retry, all of which IosRealXCTestDevice has.
+
+### Honest verdict on speed
+Our own decomposition: **model API ~8-11s/call dominates the ~135s task; device
+side is only ~2-3s/step.** So even a Portal-style on-device tree fetch (the one
+thing genuinely faster) is a minor wall-clock win — EXCEPT on the no-model
+decision-cache replay path (device time = whole step) and on long scenarios.
+Adopt it as an **opt-in Android fast-path** (swap only the acquisition layer at
+`ArbigentDevice.kt` `maestro.viewHierarchy`), not a default (it trades the
+zero-install dadb path for an APK + accessibility permission).
