@@ -205,6 +205,18 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     "content.type 取值范围 ['text']", even with clean base64. Useless for grounding.
   - `glm-4.7` is the newest GLM on the Zhipu key, but the text-only tier blocks it
     too — so the GLM *version* isn't the issue; the key/endpoint is.
+  - **PROVENANCE (important — the "tier" framing above is incomplete):** Zhipu's
+    OFFICIAL doc lists GLM-5.1 as **text-only** (doc path literally
+    `.../models/text/glm-5.1`; input modality = text). A text-only model has no
+    vision encoder, so no "tier" can add image input. Therefore Volcano ARK's
+    image-reading "glm-5.1" is **almost certainly NOT vanilla GLM-5.1** — ARK is a
+    multi-vendor reseller and is serving *some* multimodal model under that label
+    (likely GLM-5V-Turbo or a vision-wrapped variant; ARK does not disclose the
+    backing model). The genuine vision GLM is the explicitly-named **GLM-5V-Turbo**.
+    Implication: our "glm-5.1 6/6" result is on a **mislabeled black-box** model.
+    For an unambiguous default prefer **doubao-seed-2.0-mini** (ByteDance model on
+    ByteDance's own platform); if a GLM grounder is wanted, use a vision key with
+    the real `glm-5v-turbo` id, not "glm-5.1".
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
   MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
