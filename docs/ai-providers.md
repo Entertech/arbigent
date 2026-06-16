@@ -192,12 +192,19 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   for arbigent's `ClickAtCoordinates` [0,1] (needs a per-model adapter; the index
   path is unaffected). Newer `qwen3.5-vl-plus` exists (SSP 65.6) but wasn't on the
   current key's /models list.
-- **GLM correction**: `glm-5` / `glm-5.1` are TEXT-FIRST — `glm-5.1` returned
-  HTTP 400 on an image via Zhipu-direct. Our earlier 6/6 glm-5.1 (via ARK) likely
-  leaned on the a11y-tree element list + LaunchApp, not vision, so it may not
-  generalize to vision-only screens (SpringBoard/canvas). The documented GLM
-  VISION model is **glm-5v-turbo** (premium $1.20/$4.00, bbox output) or
-  **glm-4.6v** (budget $0.30/$0.90) — A/B these if a true GLM grounder is wanted.
+- **GLM — it's the access tier, not the model (corrected)**: `glm-5.1` via 火山
+  ARK genuinely DOES vision — verified reading the clock off a screenshot (HTTP
+  200), so the 6/6 glm-5.1 benchmark was real grounding. An earlier
+  "glm-5.1 is text-first" note was WRONG: my probe used macOS `base64` (76-char
+  line wrapping → embedded newlines break the data URL; even doubao-mini 400'd it).
+  Clean (newline-free) base64 works. The real split:
+  - **火山 ARK agent-plan key** → multimodal `glm-5.1` (and doubao) accept images,
+    grounding works. **This is how to use GLM.**
+  - **Zhipu-direct key (`ARBIGENT_GLM_CN_KEY`, open.bigmodel.cn)** → a TEXT-ONLY
+    tier: rejects image content for EVERY GLM (4.6/4.7/5.1) with code 1210
+    "content.type 取值范围 ['text']", even with clean base64. Useless for grounding.
+  - `glm-4.7` is the newest GLM on the Zhipu key, but the text-only tier blocks it
+    too — so the GLM *version* isn't the issue; the key/endpoint is.
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
   MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
