@@ -172,3 +172,37 @@ review (Android: Samuel Fang; iOS: A6^rikun. 提升用户体验) — protocol va
 Volcengine agent-plan endpoint: `https://ark.cn-beijing.volces.com/api/plan/v3/`
 (OpenAI-compatible, Bearer ARK key) via `--ai-type openai --openai-endpoint ...`.
 deepseek-v4/kimi/minimax on the plan are text-only or unverified for vision.
+
+## Latest-model re-survey + API smoke tests (June 16 2026)
+
+Direct China keys now held: Qwen(DashScope), Zhipu GLM, Moonshot Kimi, Xiaomi
+MiMo, MiniMax, plus Volcengine Doubao (agent-plan) and Gemini. API-only image
+smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
+
+- **Verdict: no forced switch.** No API-accessible, China-reachable model clearly
+  dominates the current doubao-seed-2.0-mini / glm-5.1 stack on neutral grounding
+  benchmarks. arbigent's PRIMARY path is ClickWithIndex (set-of-marks), which
+  needs reliable JSON + screen reading, NOT pixel-precise grounding — so mid-tier
+  grounders perform fine; reserve the strongest grounder for ClickAtCoordinates.
+- **Qwen3-VL (DashScope) is the one genuinely-new thing worth a bench — for
+  LATENCY.** Smoke (raw API, short prompt): `qwen3-vl-flash` **0.7s**,
+  `qwen3-vl-plus` **2.0s**, China-direct — vs the ~8-11s/call we measured for
+  ARK-plan/Gemini. Published GUI-grounding specialist (ScreenSpot-Pro 61.8,
+  AndroidWorld 63.7). Coordinate format = **0-1000 normalized** -> divide by 1000
+  for arbigent's `ClickAtCoordinates` [0,1] (needs a per-model adapter; the index
+  path is unaffected). Newer `qwen3.5-vl-plus` exists (SSP 65.6) but wasn't on the
+  current key's /models list.
+- **GLM correction**: `glm-5` / `glm-5.1` are TEXT-FIRST — `glm-5.1` returned
+  HTTP 400 on an image via Zhipu-direct. Our earlier 6/6 glm-5.1 (via ARK) likely
+  leaned on the a11y-tree element list + LaunchApp, not vision, so it may not
+  generalize to vision-only screens (SpringBoard/canvas). The documented GLM
+  VISION model is **glm-5v-turbo** (premium $1.20/$4.00, bbox output) or
+  **glm-4.6v** (budget $0.30/$0.90) — A/B these if a true GLM grounder is wanted.
+- **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
+  MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
+  models 6-10s, v2-flash fast but center-guesses; no public grounding score);
+  MiniMax-M3 (multimodal input but NOT GUI-coordinate-tuned, thinking model, slow);
+  gemini-3.5-flash (GA DROPPED Computer Use -> downgrade; keep gemini-3-flash-preview).
+- **Recommended bench (cost-bounded)**: qwen3-vl-flash vs current champ
+  doubao-seed-2.0-mini, ONE platform, 3 runs each — validate the latency win at
+  equal success. Add the /1000 coord adapter first for a fair coordinate-fallback test.
