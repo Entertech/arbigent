@@ -358,3 +358,23 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     `Qwen3.6-35B-A3B` (Alibaba claims 3.5 multimodal > Qwen3-VL). But `Qwen3-VL-8B-Instruct`
     remains the most practical small self-host grounder (smallest 3.5 unified is 4B;
     3.6 open starts at 27B).
+- **Apple-Silicon local deploy (verified 2026-06-17 on M5 Pro / 48GB):** `qwen3.6-flash`
+  has NO 1:1 open weight (closed API tier); the same-gen open multimodal is
+  `Qwen3.6-35B-A3B` (MoE ~3B active) / `Qwen3.6-27B` (dense), no small 3.6.
+  Architecture note: `Qwen3.6-35B-A3B`'s `model_type` is literally `qwen3_5_moe`
+  (3.6 folded into the 3.5 unified-MoE-VL arch).
+  - **Mac engine split (Qwen3.6 vision):** runs ONLY on **`mlx-vlm ≥ v0.6.0`** (the
+    "image tokens:0" bug #1057 was fixed by PR #1179 / v0.6.0, 2026-06-01). **LM Studio
+    ❌** (mlx-engine fork lag, issue #325 open), **Ollama ❌** (missing `qwen35moe`
+    arch), **llama.cpp** rough (segfaults, needs batch 256; no official 3.6 GGUF). By
+    contrast **Qwen3-VL** vision is stable on ALL engines (MLX/llama.cpp/Ollama/LM Studio).
+  - **48GB fit (MLX 4-bit):** Qwen3-VL-4B ~4GB (45-70 t/s), **Qwen3-VL-8B ~6-8GB
+    (28-35 t/s) = recommended, fits under default GPU-wired cap, no tuning, any engine**,
+    Qwen3-VL-32B ~20GB tight, Qwen3.6-35B-A3B ~18-20GB (18-25 t/s, MoE fast) tight,
+    Qwen3.6-27B ~18-21GB tight.
+  - **Commands:** safest = `pip install -U mlx-vlm; python -m mlx_vlm.server --model
+    mlx-community/Qwen3-VL-8B-Instruct-4bit --port 8000` (OpenAI-compatible → the
+    `/1000 → ClickAtCoordinates` adapter is unchanged). Closest-to-flash =
+    `mlx-community/Qwen3.6-35B-A3B-4bit` via `mlx-vlm>=0.6.0` ONLY (raise
+    `sudo sysctl iogpu.wired_limit_mb=44000` if memory-tight). No local LLM tooling
+    was installed yet (miniconda python3 present).
