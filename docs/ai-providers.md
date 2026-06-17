@@ -389,3 +389,17 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     local is ~2× slower but offline / zero-API-cost / no-proxy. CAVEAT: the 35B emits
     inconsistent coord formats (`[145,217]`, `{"x":618,600}` missing-quote) — constrain
     the JSON harder or parse loosely; the 8B's output is cleaner.
+  - **WIRED INTO ARBIGENT — no Kotlin needed (verified end-to-end 2026-06-17):**
+    `mlx_vlm.server` already exposes an OpenAI-compatible `/v1/chat/completions` that
+    accepts `image_url`, and arbigent's CLI already has `--ai-type=openai
+    --openai-endpoint --openai-model-name --openai-api-key`. So a self-hosted grounder
+    is pure config:
+    1. `./scripts/local-vl-server.sh` (starts mlx-vlm OpenAI server on :8080).
+    2. `arbigent run --project-file=<p>.yaml --ai-type=openai
+       --openai-endpoint=http://localhost:8080/v1/ --openai-model-name=<model-or-path>
+       --openai-api-key=dummy-local --scenario-ids=<id>`.
+    Proven on a real Pixel: a Settings→Battery scenario ran 🟢 SUCCESS, 3 steps,
+    34.6s, fully driven by local Qwen3-VL-8B (the 8B handled arbigent's full
+    ~5-7K-token uitree+context prompt in ~7-9s/step — slower than its ~2.5s
+    grounding-only call because the prompt is much larger, but completely usable
+    offline / zero-API-cost). Stop the server with `pkill -f mlx_vlm.server`.
