@@ -226,6 +226,37 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     For an unambiguous default prefer **doubao-seed-2.0-mini** (ByteDance model on
     ByteDance's own platform); if a GLM grounder is wanted, use a vision key with
     the real `glm-5v-turbo` id, not "glm-5.1".
+  - **PROVENANCE — now PROVEN by a cross-platform control (2026-06-17):** the SAME
+    id `glm-5.1`, SAME prompt + screenshot, behaves differently per platform:
+    - **火山 ARK plan** `glm-5.1` → HTTP 200, correctly reads the lock-screen clock
+      ("20:18"), `prompt_tokens=704` (image actually ingested). **Multimodal.**
+    - **DashScope** `glm-5.1` → HTTP 400 `"The current model only supports text
+      modality and does not support image input"`. **Text-only** (matches Zhipu's
+      official spec).
+    Same name, one sees images and one doesn't ⇒ **火山's "glm-5.1" is NOT vanilla
+    GLM-5.1; it's a multimodal model routed/wrapped under that label.** (Caveat: a
+    *1×1* probe PNG makes ARK's glm-5.1 return 400 too — that's image-validation
+    failing on a degenerate image, NOT a text-only rejection; always test with a
+    real screenshot.)
+- **GLM-5V-Turbo availability — NEITHER 阿里云 NOR 火山 offers it (verified
+  2026-06-17, empirical + catalog):** GLM-5V-Turbo is Zhipu's real vision model and
+  is **exclusive to Zhipu's own platform** (open.bigmodel.cn / Z.ai, id
+  `glm-5v-turbo`, 200K ctx, multimodal). As a managed API:
+  - **DashScope/百炼**: `glm-5v-turbo` → `404 model_not_found`; ALL `glm-*v` ids 404.
+    The `/models` catalog has only TEXT GLM (`glm-5.2/5.1/5/4.7/4.6/4.5/4.5-air`) —
+    zero vision variants. Official 百炼 vision page classifies glm-5/glm-4.7 as
+    纯文本模型. Control (`qwen3-vl-flash`) passed 200, so the key/endpoint are valid.
+  - **火山 ARK**: `glm-5v-turbo` → `404 UnsupportedModel` on the plan endpoint (our
+    `ARK_CODING_API_KEY` is plan-scoped only; it 401s the standard `/api/v3` for
+    *every* model incl. doubao, so the standard endpoint is untestable with this
+    key). Catalog research (multiple consistent sources): 火山 resells GLM as
+    **text/coding/agent only** (GLM-4.7/5.1/5.2); vision in the bundles is Doubao /
+    Kimi, never GLM. No GLM-*V variant found on 火山 anywhere. (Live JS-rendered
+    模型广场 not machine-readable, but absence-of-evidence is strong + consistent.)
+  - Practical upshot: want a real GLM vision model → call Zhipu bigmodel.cn directly
+    with `glm-5v-turbo` (needs balance; account is currently 1113-dry). Want
+    "GLM-ish" vision off ARK today → 火山's `glm-5.1` already reads images (but it's
+    the wrapped/ambiguous model above, not officially GLM-5V-Turbo).
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
   MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
