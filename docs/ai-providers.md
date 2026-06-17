@@ -200,9 +200,18 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   Clean (newline-free) base64 works. The real split:
   - **火山 ARK agent-plan key** → multimodal `glm-5.1` (and doubao) accept images,
     grounding works. **This is how to use GLM.**
-  - **Zhipu-direct key (`ARBIGENT_GLM_CN_KEY`, open.bigmodel.cn)** → a TEXT-ONLY
-    tier: rejects image content for EVERY GLM (4.6/4.7/5.1) with code 1210
-    "content.type 取值范围 ['text']", even with clean base64. Useless for grounding.
+  - **Zhipu-direct key (`ARBIGENT_GLM_CN_KEY`, open.bigmodel.cn)** → two distinct
+    failure modes, don't conflate them:
+    - When in balance: TEXT GLMs (4.6/4.7/5.1) reject image content with
+      `400 / 1210 "content.type 取值范围 ['text']"` — a real model-level rejection
+      (these models are text-only), not a tier thing. The VISION ids
+      (`glm-5v-turbo`, `glm-4.6v`, `glm-4.5v`, `glm-4v-plus`) ARE valid on this key
+      (not 404).
+    - As of 2026-06-17 the account is OUT OF BALANCE: EVERY model — incl. plain
+      TEXT `glm-4.6` with no image — returns `429 / 1113 "余额不足或无可用资源包,
+      请充值"`. So `glm-5v-turbo` can't be empirically vision-tested here until the
+      Zhipu account is recharged / a resource pack is bought. (The id resolves; the
+      block is billing, not capability or permission.)
   - `glm-4.7` is the newest GLM on the Zhipu key, but the text-only tier blocks it
     too — so the GLM *version* isn't the issue; the key/endpoint is.
   - **PROVENANCE (important — the "tier" framing above is incomplete):** Zhipu's
