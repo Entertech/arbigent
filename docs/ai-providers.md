@@ -264,6 +264,27 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     `glm-4.5v` ~3.9s; prompt_tokens 600–655 confirm the image was ingested. So the
     real GLM-5V-Turbo is usable as a clean grounder — slower than `qwen3-vl-flash`
     (~0.7s) but unambiguous, unlike ARK's wrapped "glm-5.1".
+- **OpenAI non-thinking vision models (June 2026, for grounding)** — two routes:
+  1. **Pure non-reasoning** (no reasoning tokens, no effort knob): `gpt-4.1`
+     (~0.79s, "smartest non-reasoning model"), `gpt-4.1-mini` ($0.40/$1.60,
+     ~1.0s — best speed/$ balance), `gpt-4.1-nano` (~0.71s, $0.05/$0.20, fastest/
+     cheapest), `gpt-4o`/`gpt-4o-mini` (legacy). 4.1 family is retired from ChatGPT
+     (2026-02-13) but still callable in the API. `gpt-5-chat-latest` is the GPT-5
+     "Instant" non-reasoning sibling but DEPRECATED (API shutdown 2026-07-23); there
+     is NO `gpt-5.5-chat-latest`.
+  2. **Current official path = GPT-5.x reasoning model with thinking OFF** via
+     `reasoning.effort=none` (the new disabling value; old gpt-5 used `minimal`,
+     removed on 5.1+). `gpt-5.4-mini` (marked "Default", OpenAI positions it for
+     computer-use/subagents = UI grounding) + `effort=none` is the on-target current
+     id; `gpt-5.4-nano` cheapest; `gpt-5.5` frontier ($5/$30). o-series (o3/o4-mini)
+     are always-reasoning + deprecated — avoid.
+  - **Grounding caveat**: OpenAI general models are weak at PRECISE pixel coords
+    (GPT-4o ~18% ScreenSpot, 0.8% ScreenSpot-Pro vs Qwen2.5-VL/UI-TARS ~87-90%). So
+    use them to PICK a Set-of-Mark index (= arbigent's `ClickWithIndex` path), never
+    for raw xy. Practical pick if wiring OpenAI: `gpt-4.1-mini`, or `gpt-5.4-mini`
+    +effort=none. But none beat the China-direct `qwen3-vl-flash` (~0.7s) /
+    `doubao-seed-2.0-mini` on latency/cost/access; OpenAI's edge is index-pick
+    judgment + clean JSON, not grounding.
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
   MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
