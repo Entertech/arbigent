@@ -254,9 +254,16 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     Kimi, never GLM. No GLM-*V variant found on 火山 anywhere. (Live JS-rendered
     模型广场 not machine-readable, but absence-of-evidence is strong + consistent.)
   - Practical upshot: want a real GLM vision model → call Zhipu bigmodel.cn directly
-    with `glm-5v-turbo` (needs balance; account is currently 1113-dry). Want
-    "GLM-ish" vision off ARK today → 火山's `glm-5.1` already reads images (but it's
-    the wrapped/ambiguous model above, not officially GLM-5V-Turbo).
+    with `glm-5v-turbo`. Want "GLM-ish" vision off ARK today → 火山's `glm-5.1`
+    already reads images (but it's the wrapped/ambiguous model above, not officially
+    GLM-5V-Turbo).
+  - **VERIFIED working after recharge (2026-06-17):** with the Zhipu account back in
+    balance, the genuine vision models on `ARBIGENT_GLM_CN_KEY` all read a real
+    screenshot's lock-clock correctly ("20:18"), provenance-clean (Zhipu's own
+    platform): `glm-5v-turbo` 200 in **~2.9s** (fastest, terse), `glm-4.6v` ~3.1s,
+    `glm-4.5v` ~3.9s; prompt_tokens 600–655 confirm the image was ingested. So the
+    real GLM-5V-Turbo is usable as a clean grounder — slower than `qwen3-vl-flash`
+    (~0.7s) but unambiguous, unlike ARK's wrapped "glm-5.1".
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
   MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
