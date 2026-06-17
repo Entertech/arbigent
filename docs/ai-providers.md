@@ -309,3 +309,25 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   - Honesty: app icons are LARGE/easy targets → everyone hits 4/4; this separates on
     latency/precision, NOT capability ceiling (no small-target / ScreenSpot-Pro
     stress). N=4, single screen — directional, not definitive.
+- **Self-hosting the qwen3-vl grounder (verified 2026-06-17):** `qwen3-vl-flash`
+  itself is NOT self-deployable — it's a closed API-only tier on Alibaba Model
+  Studio (snapshots `...-2025-10-15`, `...-2026-01-22`; `qwen3-vl-plus` also closed);
+  no downloadable weights. But the OPEN Qwen3-VL family IS self-hostable (**Apache-2.0,
+  commercial OK, no MAU cap**): dense 2B/4B/8B/32B + MoE 30B-A3B/235B-A22B, each
+  Instruct/Thinking + FP8 + GGUF. Open SKUs are NOT flash's weights (separately tuned)
+  — pick by VRAM, not "flash-equivalence". **Grounding is in the open weights** — same
+  `bbox_2d [x1,y1,x2,y2]` 0-1000 convention as the API, so our `/1000 → ClickAtCoordinates`
+  adapter works unchanged on a self-hosted endpoint.
+  - Pick: **`Qwen3-VL-8B-Instruct`** (FP8 on a 24GB card ~10-12GB, or int4 GGUF on
+    12-16GB; ScreenSpot ~94%, card markets "operates PC/mobile GUIs") = best
+    grounding-per-VRAM. Cheaper: `4B-Instruct` (int4 on 6-8GB, ~93%). MoE flash-like
+    (3B active=fast) but big memory: `30B-A3B-Instruct` (int4 ~18-21GB / FP8 ~30GB —
+    must fit ALL 30B). Avoid 32B for a flash replacement (all-active = slow).
+  - Serve: vLLM≥0.11.0 (best) / SGLang~0.5.6; `transformers>=4.57.0` +
+    `qwen-vl-utils==0.0.14`. `vllm serve Qwen/Qwen3-VL-8B-Instruct --served-model-name
+    qwen3-vl --max-model-len 128000 --limit-mm-per-prompt '{"image":1,"video":0}'` →
+    OpenAI-compatible `/v1/chat/completions`, drop-in for the current DashScope call.
+  - Gotchas: version-pin (#1 footgun); cap image `max_pixels` (~1-1.5M; too low blurs
+    small targets); don't serve full 256K ctx (set 128K, KV-cache); GGUF needs the
+    separate `mmproj` vision file; MoE must hold all experts. (#1576's <2% ScreenSpot-Pro
+    was a coord-normalization deploy bug, not model weakness — calibrate /1000 scaling.)
