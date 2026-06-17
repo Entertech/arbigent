@@ -376,5 +376,16 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     mlx-community/Qwen3-VL-8B-Instruct-4bit --port 8000` (OpenAI-compatible → the
     `/1000 → ClickAtCoordinates` adapter is unchanged). Closest-to-flash =
     `mlx-community/Qwen3.6-35B-A3B-4bit` via `mlx-vlm>=0.6.0` ONLY (raise
-    `sudo sysctl iogpu.wired_limit_mb=44000` if memory-tight). No local LLM tooling
-    was installed yet (miniconda python3 present).
+    `sudo sysctl iogpu.wired_limit_mb=44000` if memory-tight).
+  - **Download via ModelScope, not HF** (China-direct, no proxy): `pip install -U
+    modelscope; python -c "from modelscope import snapshot_download as d;
+    print(d('mlx-community/Qwen3-VL-8B-Instruct-4bit'))"` → pass the returned local
+    path to `mlx_vlm.load(...)`. Measured: 8B ~5GB in 179s, 35B-A3B ~18GB in 216s.
+  - **MEASURED on M5 Pro/48GB (2026-06-17, same 3-target grounding bench):** both work
+    via mlx-vlm 0.6.3. `Qwen3-VL-8B-4bit`: 3/3, err 0.011, ~2.2s/call steady (first
+    4.8s), load 3.3s, ~6GB. `Qwen3.6-35B-A3B-4bit`: 3/3, **err 0.008 = identical to
+    cloud qwen3.6-flash** (no quant accuracy loss), ~2.4s/call (first 6.4s), load 8.7s,
+    ~18-20GB; MoE so as fast as the 8B despite 3× size. Cloud qwen3.6-flash is 1.2s, so
+    local is ~2× slower but offline / zero-API-cost / no-proxy. CAVEAT: the 35B emits
+    inconsistent coord formats (`[145,217]`, `{"x":618,600}` missing-quote) — constrain
+    the JSON harder or parse loosely; the 8B's output is cleaner.
