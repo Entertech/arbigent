@@ -1373,9 +1373,14 @@ private suspend fun step(
   // provider's prompt but stays outside both cache hashes (the uiTreeHash is
   // computed above from the unmodified tree, and context() ignores hints).
   val revisitHint = revisitedScreenHintOrNull(contextHolder.steps(), uiTreeStrings.optimizedTreeString)
-  val decisionUiTreeStrings = if (revisitHint != null) {
-    arbigentInfoLog(revisitHint)
-    uiTreeStrings.copy(aiHints = uiTreeStrings.aiHints + revisitHint)
+  // Manager mode (opt-in, default off): a deterministic supervisor that flags a
+  // grind — same action on an unchanged screen — and tells the executor to switch
+  // strategy. Orthogonal to the revisit hint (which catches cross-screen cycles).
+  val managerHint = if (ManagerMode.enabled()) ManagerMode.interventionHintOrNull(contextHolder.steps()) else null
+  val extraHints = listOfNotNull(revisitHint, managerHint)
+  val decisionUiTreeStrings = if (extraHints.isNotEmpty()) {
+    extraHints.forEach { arbigentInfoLog(it) }
+    uiTreeStrings.copy(aiHints = uiTreeStrings.aiHints + extraHints.joinToString(separator = "\n", prefix = "\n"))
   } else {
     uiTreeStrings
   }
