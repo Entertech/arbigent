@@ -285,11 +285,37 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     +effort=none. But none beat the China-direct `qwen3-vl-flash` (~0.7s) /
     `doubao-seed-2.0-mini` on latency/cost/access; OpenAI's edge is index-pick
     judgment + clean JSON, not grounding.
+- **MiMo (Xiaomi) — reinstated, it's actually capable**: endpoint
+  `https://api.xiaomimimo.com/v1/` (OpenAI-compatible, `ARBIGENT_MIMO_CN_KEY`), model
+  `mimo-v2.5` (also `-pro/-omni/-flash`, and `mimo-v2-*`). MEASURED: grounds correctly
+  (`{"x":616,"y":591}` for Chrome, GT ~618,601) in ~3.5s; it IS a reasoning model
+  (emits reasoning_tokens), natively multimodal (1100 image tokens). On the hard
+  multi-step store task it went 1/2 (Android ✅, iOS ❌ ran out of steps) — better than
+  doubao/qwen there. Earlier "skip / no grounding score" note was wrong.
 - **Skip**: kimi vision (smoke: lazy `[0.5,0.5]` center-guess; SSP 52.8 < Qwen);
-  MiMo (`mimo-v2-omni` deprecated->v2.5 by 2026-06-30; v2.5/omni are slow thinking
-  models 6-10s, v2-flash fast but center-guesses; no public grounding score);
   MiniMax-M3 (multimodal input but NOT GUI-coordinate-tuned, thinking model, slow);
   gemini-3.5-flash (GA DROPPED Computer Use -> downgrade; keep gemini-3-flash-preview).
+- **Multi-step agentic bench — MEASURED 2026-06-17, BOTH real devices** (Pixel 4 +
+  iPhone 12 mini; NL task: from home → open store → 2nd popular free app → report its
+  5th review; `arbigent run task`, max-step 20, single attempt). Success = arbigent
+  judged the goal reached:
+  | model | Android | iOS | verdict |
+  |---|---|---|---|
+  | **gemini-3-flash-preview** | ✅ 7st/324s | ✅ 8st/91s | **2/2 most reliable** |
+  | **glm-5v-turbo** | ✅ 7st/128s | ✅ 19st/267s | **2/2** (fastest-success on Android) |
+  | mimo-v2.5 | ✅ 11st/140s | ❌ 20st (found 2nd app, out of steps) | 1/2 |
+  | doubao-seed-2.0-mini | ❌ 20st (lost) | ❌ 21st (lost) | 0/2 |
+  | qwen3-vl-flash | ❌ 20st (stuck on reviews nav) | ❌ 21st (stuck on rankings) | 0/2 |
+  - **KEY INSIGHT — opposite of the single-step grounding bench**: on a HARD multi-step
+    agentic task the REASONING models (gemini/glm/mimo) win — thinking plans the
+    navigation and escapes loops — while the FAST non-reasoning models (doubao/qwen)
+    get lost despite quick per-step latency. So: simple locate-a-coordinate → use the
+    fast `qwen3.6-flash`; complex multi-step navigation → use `gemini-3-flash-preview`
+    or `glm-5v-turbo`. Task shape decides the model, not a single leaderboard.
+  - **iOS hybrid grounding confirmed live**: models tapped the App Store icon (absent
+    from the XCTest AX tree) via `ClickAtCoordinates (15%,48%)` — the coordinate
+    fallback — then drove the store. The earlier "iOS can't launch the store" gap is
+    closed by the hybrid path.
 - **Grounding bench — MEASURED 2026-06-17** (real Android app-drawer screenshot
   1080×2400; ground truth = uiautomator element bounds; 4 spread icon targets
   Spotify/Calendar/Chrome/Gmail; ask normalized 0-1000 center, hit = point inside
