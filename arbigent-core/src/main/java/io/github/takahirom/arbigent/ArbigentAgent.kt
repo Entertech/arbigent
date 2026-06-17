@@ -440,6 +440,18 @@ public sealed interface ArbigentAiDecisionCache {
     public suspend fun get(key: String): ArbigentAi.DecisionOutput?
     public suspend fun set(key: String, value: ArbigentAi.DecisionOutput)
     public suspend fun remove(key: String)
+
+    /**
+     * Fuzzy fallback (opt-in, default off): the key of the most similar cached
+     * entry reached at the SAME task context as [currentKey], whose optimized UI
+     * tree has Jaccard similarity >= [threshold] with [currentOptimizedTree], or
+     * null. Default implementation does no fuzzy matching.
+     */
+    public suspend fun getSimilarKey(
+      currentKey: String,
+      currentOptimizedTree: String,
+      threshold: Double,
+    ): String? = null
   }
 
   // FileCache
@@ -476,7 +488,50 @@ public sealed interface ArbigentAiDecisionCache {
         )
         true
       })
+      // Best-effort fuzzy index append (never affects the exact cache on failure).
+      runCatching {
+        val tree = value.step.uiTreeStrings?.optimizedTreeString
+        if (!tree.isNullOrBlank()) {
+          val tokens = DecisionCacheFuzzy.tokenize(tree)
+          if (tokens.isNotEmpty()) {
+            fuzzyIndexFile().appendText(
+              key + "\t" + DecisionCacheFuzzy.contextPart(key) + "\t" + tokens.joinToString(" ") + "\n"
+            )
+          }
+        }
+      }
     }
+
+    public override suspend fun getSimilarKey(
+      currentKey: String,
+      currentOptimizedTree: String,
+      threshold: Double,
+    ): String? {
+      val current = DecisionCacheFuzzy.tokenize(currentOptimizedTree)
+      if (current.isEmpty()) return null
+      val ctx = DecisionCacheFuzzy.contextPart(currentKey)
+      val file = fuzzyIndexFile()
+      if (!file.exists()) return null
+      var bestKey: String? = null
+      var best = 0.0
+      runCatching {
+        file.forEachLine { line ->
+          val parts = line.split("\t")
+          if (parts.size != 3) return@forEachLine
+          val (k, c, toks) = parts
+          if (k == currentKey || c != ctx) return@forEachLine
+          val score = DecisionCacheFuzzy.jaccard(current, toks.split(" ").toSet())
+          if (score >= threshold && score > best) {
+            best = score
+            bestKey = k
+          }
+        }
+      }
+      if (bestKey != null) arbigentInfoLog("AI-decision fuzzy match score=$best -> $bestKey")
+      return bestKey
+    }
+
+    private fun fuzzyIndexFile(): File = File(ArbigentFiles.cacheDir, "fuzzy-index.tsv")
 
     public override suspend fun remove(key: String) {
       arbigentInfoLog("AI-decision cache remove with key: $key")
@@ -737,6 +792,28 @@ public fun AgentConfigBuilder(
                 screenshotFilePath = decisionInput.screenshotFilePath
               )
             )
+          }
+          // Fuzzy fallback (opt-in via ARBIGENT_DECISION_CACHE_FUZZY_THRESHOLD;
+          // default off): replay the most similar same-context cached decision
+          // instead of calling the model. Assertions still run live, so this can
+          // never fabricate a passing test.
+          DecisionCacheFuzzy.threshold()?.let { threshold ->
+            val similarKey = aiDecisionCache.getSimilarKey(
+              decisionInput.cacheKey,
+              decisionInput.uiTreeStrings.optimizedTreeString,
+              threshold,
+            )
+            val similar = similarKey?.let { aiDecisionCache.get(it) }
+            if (similar != null) {
+              arbigentInfoLog("AI-decision cache FUZZY hit (>=$threshold) via $similarKey")
+              aiDecisionCache.set(decisionInput.cacheKey, similar)
+              return similar.copy(
+                step = similar.step.copy(
+                  timestamp = TimeProvider.get().currentTimeMillis(),
+                  screenshotFilePath = decisionInput.screenshotFilePath
+                )
+              )
+            }
           }
           arbigentDebugLog("AI-decision cache miss with view tree and prompt")
           val output = chain.proceed(decisionInput)
