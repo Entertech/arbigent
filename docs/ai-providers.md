@@ -331,3 +331,30 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     small targets); don't serve full 256K ctx (set 128K, KV-cache); GGUF needs the
     separate `mmproj` vision file; MoE must hold all experts. (#1576's <2% ScreenSpot-Pro
     was a coord-normalization deploy bug, not model weakness — calibrate /1000 scaling.)
+- **Qwen "-VL" line is being RETIRED → migrate to the unified mainline (verified
+  2026-06-17, live DashScope catalog + measured):** Qwen folded vision INTO the main
+  models, so the standalone `-VL` SKUs are winding down and there is NO `qwen3.5-vl-*`
+  / `qwen3.6-vl-*` / `qwen3.7-vl-*` (all 404). Retirement: qwen2.5-vl already gone
+  (2026-05-13); qwen-vl-max/plus (2026-07-13); qwen3-vl-8b API (2026-07-08);
+  **`qwen3-vl-flash` ~2026-09-08 → official replacement `qwen3.6-flash`** (date per
+  the deprecation page; treat as tentative). `qwen3-vl-plus` still live.
+  - **Measured grounding successor bench** (same screenshot, 3 targets, normalized
+    0-1000): `qwen3-vl-flash` 3/3 @0.8s (retiring) → **`qwen3.6-flash` 3/3 @1.2s,
+    natively multimodal, same ~1180 in / ~13 out tokens, same accuracy** = the
+    drop-in. `qwen3.5-flash` 3/3 @1.2s and ~6× CHEAPER (¥0.2 vs ¥1.2 /Mtok in) but
+    slightly less precise (0.013 vs 0.008). `qwen3.6-plus` 3/3 but 2.4s (grounding
+    overkill). Per-call cost is a rounding error either way (~¥0.0015).
+  - **`qwen3.7-plus`** (GA 2026-06, live): BEST published grounder — ScreenSpot-Pro
+    **79.0** / AndroidWorld 81.0 (beats GPT-5.4 67.4) — BUT emits **absolute pixel
+    coords** (needs a per-model adapter, not the VL 0-1000 path) and is slower/pricier.
+    `qwen3.7` has NO flash tier yet (only plus/max). For a fast grounder stay on
+    qwen3.6-flash.
+  - **`gui-plus`**: a computer-use AGENT model (screenshot→structured `left_click`/
+    `type`/`scroll` actions via its native tool schema, MAI-UI lineage). With a generic
+    "{x,y} 0-1000" prompt it FAILS (0/3, rambles/truncates) — it's NOT a drop-in point
+    grounder; only use it with the full computer-use action protocol. ~¥1.5/¥4.5 /Mtok.
+  - **Self-host got a new option**: Qwen3.5/3.6 OPEN weights are now natively
+    multimodal too (Apache-2.0): `Qwen3.5-4B/27B`, `Qwen3.5-35B-A3B`, `Qwen3.6-27B`,
+    `Qwen3.6-35B-A3B` (Alibaba claims 3.5 multimodal > Qwen3-VL). But `Qwen3-VL-8B-Instruct`
+    remains the most practical small self-host grounder (smallest 3.5 unified is 4B;
+    3.6 open starts at 27B).
