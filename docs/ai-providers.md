@@ -290,6 +290,22 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   models 6-10s, v2-flash fast but center-guesses; no public grounding score);
   MiniMax-M3 (multimodal input but NOT GUI-coordinate-tuned, thinking model, slow);
   gemini-3.5-flash (GA DROPPED Computer Use -> downgrade; keep gemini-3-flash-preview).
-- **Recommended bench (cost-bounded)**: qwen3-vl-flash vs current champ
-  doubao-seed-2.0-mini, ONE platform, 3 runs each — validate the latency win at
-  equal success. Add the /1000 coord adapter first for a fair coordinate-fallback test.
+- **Grounding bench — MEASURED 2026-06-17** (real Android app-drawer screenshot
+  1080×2400; ground truth = uiautomator element bounds; 4 spread icon targets
+  Spotify/Calendar/Chrome/Gmail; ask normalized 0-1000 center, hit = point inside
+  the true box):
+  | model | hits | mean norm-err | mean sec | note |
+  |---|---|---|---|---|
+  | **qwen3-vl-flash** | 4/4 | **0.007** | **1.1** | fastest + most accurate; DashScope direct. WINNER |
+  | **glm-5v-turbo** | 4/4 | **0.007** | 1.9 | ties accuracy, but a REASONING model — MUST send `thinking:{type:disabled}` + `max_tokens≥512`, else reasoning eats the budget and the JSON truncates (`{"x":619,"592}`) → all fail |
+  | **gemini-3-flash-preview** | 4/4 | 0.012 | 2.3 | `thinkingConfig.thinkingBudget:0`; solid; ~2× qwen's error |
+  | **doubao-seed-2.0-mini** | 4/4 | 0.016 | **13.0** | accurate but VERY slow on the ARK *plan* endpoint (agent wrapper + heavy reasoning) — the tree-driven benchmark champ is a POOR pure grounder |
+  - Takeaways: (1) **qwen3-vl-flash is the default grounder** (latency+precision both
+    best; model call dominates step time). (2) All 4 used 0-1000 + named `{x,y}`
+    correctly (no Gemini `[y,x]` swap with named fields), so the arbigent adapter is
+    just: parse `{x,y}` → `/1000` → `ClickAtCoordinates`. (3) glm-5v-turbo's
+    disable-thinking requirement is a real integration gotcha. (4) "tree-driven champ"
+    (doubao-mini) ≠ "good grounder".
+  - Honesty: app icons are LARGE/easy targets → everyone hits 4/4; this separates on
+    latency/precision, NOT capability ceiling (no small-target / ScreenSpot-Pro
+    stress). N=4, single screen — directional, not definitive.
