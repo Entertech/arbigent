@@ -6,7 +6,9 @@ import ios.LocalIOSDevice
 import ios.devicectl.DeviceControlIOSDevice
 import ios.xctest.XCTestIOSDevice
 import maestro.Maestro
+import maestro.android.AndroidDeviceConnection
 import maestro.drivers.AndroidDriver
+import kotlinx.coroutines.runBlocking
 import maestro.drivers.IOSDriver
 import maestro.utils.NoopInsights
 import maestro.utils.TempFileHandler
@@ -50,8 +52,14 @@ public sealed interface ArbigentAvailableDevice {
       parseForegroundPackage(out)
     }.getOrNull()
     override fun connectToDevice(): ArbigentDevice {
+      // Maestro's AndroidDeviceConnection refactor (#3372) made AndroidDriver take an
+      // AndroidDeviceConnection instead of a raw Dadb. forDevice() selects the same
+      // device by serial (Dadb.list().find { it.toString() == deviceId }), matching how
+      // we picked `dadb`. Our own `dadb` stays for foregroundPackage()'s dumpsys shell.
+      val connection = AndroidDeviceConnection.byId(dadb.toString())
+        ?: throw RuntimeException("Arbigent could not open an AndroidDeviceConnection for device: $dadb")
       val driver = AndroidDriver(
-        dadb,
+        connection,
       )
       val maestro = try {
         Maestro.android(
@@ -117,20 +125,61 @@ public sealed interface ArbigentAvailableDevice {
         getInstalledApps = { xcRunnerCLIUtils.listApps(device.udid) },
       )
 
-      return MaestroDevice(
-        Maestro.ios(
-          IOSDriver(
-            LocalIOSDevice(
-              deviceId = device.udid,
-              xcTestDevice = xcTestDevice,
-              deviceController = deviceController,
-              insights = NoopInsights,
-            ),
+      val maestro = Maestro.ios(
+        IOSDriver(
+          LocalIOSDevice(
+            deviceId = device.udid,
+            xcTestDevice = xcTestDevice,
+            deviceController = deviceController,
             insights = NoopInsights,
-          )
-        ),
-        availableDevice = this
+          ),
+          insights = NoopInsights,
+        )
       )
+      try {
+        warmUp(maestro)
+        return MaestroDevice(
+          maestro,
+          availableDevice = this
+        )
+      } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        maestro.close()
+        throw e
+      } catch (e: Exception) {
+        maestro.close()
+        throw e
+      }
+    }
+
+    // A freshly booted iOS simulator is still doing post-boot work (e.g. Data
+    // Migration), and hitting it with the first scenario action tends to crash the
+    // XCTest runner. Warm it up first: poll the view hierarchy until the runner
+    // responds (this also starts the runner), then let it settle, so the first real
+    // interaction runs on a warm, stable device.
+    private fun warmUp(maestro: Maestro) {
+      val warmUpTimeoutMs = 60_000L
+      val settleMs = 10_000L
+      val pollIntervalMs = 2_000L
+      val start = System.currentTimeMillis()
+      var responsive = false
+      while (System.currentTimeMillis() - start < warmUpTimeoutMs) {
+        try {
+          runBlocking { maestro.viewHierarchy() }
+          responsive = true
+          break
+        } catch (e: Exception) {
+          arbigentInfoLog("iOS warm-up: device not responsive yet, retrying: ${e.message}")
+          Thread.sleep(pollIntervalMs)
+        }
+      }
+      if (!responsive) {
+        arbigentInfoLog("iOS warm-up: device did not become responsive within ${warmUpTimeoutMs}ms; continuing anyway")
+        return
+      }
+      // Let post-boot work settle before the first scenario interaction.
+      Thread.sleep(settleMs)
+      arbigentInfoLog("iOS warm-up done")
     }
   }
 

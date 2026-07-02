@@ -10,6 +10,7 @@ import maestro.UiElement.Companion.toUiElementOrNull
 import maestro.orchestra.MaestroCommand
 import maestro.orchestra.Orchestra
 import java.io.File
+import okio.sink
 import kotlin.math.pow
 import kotlin.system.measureTimeMillis
 
@@ -213,9 +214,12 @@ public class MaestroDevice(
     arbigentInfoLog("MaestroDevice created: screenshotsDir:${screenshotsDir.absolutePath}")
   }
 
+  // Maestro's Orchestra artifact refactor (#3282) removed screenshotsDir; takeScreenshot
+  // now writes under artifactsDir/takeScreenshot/. Arbigent instead captures screenshots
+  // itself in executeActions() to keep the screenshotsDir/<stepId>.png path contract, so
+  // Orchestra needs no artifactsDir here.
   @Volatile private var orchestra = Orchestra(
     maestro = maestro,
-    screenshotsDir = screenshotsDir.toPath(),
   )
 
   // Per-screen cache of the view hierarchy. Fetching it from the device (XCTest
@@ -292,8 +296,23 @@ public class MaestroDevice(
 
   override fun executeActions(actions: List<MaestroCommand>) {
     ensureConnected()
+    // A lone takeScreenshot (how arbigent always issues it) is captured directly to
+    // screenshotsDir/<path>.png. Maestro's Orchestra artifact refactor (#3282) moved
+    // takeScreenshot outputs under artifactsDir/takeScreenshot/, which no longer matches
+    // where arbigent reads them (screenshotsDir/<stepId>.png), so we bypass Orchestra for
+    // screenshots and keep the path contract. All other commands still run via Orchestra.
+    val screenshot = actions.singleOrNull()?.takeScreenshotCommand
     ArbigentGlobalStatus.onDevice(actions.joinToString { it.toString() }) {
-      val ms = measureTimeMillis { runBlocking { orchestra.runFlow(actions) } }
+      val ms = measureTimeMillis {
+        runBlocking {
+          if (screenshot != null) {
+            val file = File(screenshotsDir, "${screenshot.path}.png").apply { parentFile?.mkdirs() }
+            maestro.takeScreenshot(file.sink(), false)
+          } else {
+            orchestra.runFlow(actions)
+          }
+        }
+      }
       arbigentDebugLog("PERF executeActions ${ms}ms")
     }
     // Any non-screenshot command may change the screen, so drop the cached
@@ -675,7 +694,7 @@ public class MaestroDevice(
   private fun updateConnection(newMaestro: Maestro) {
     this.maestro = newMaestro
     this.cachedHierarchy = null
-    this.orchestra = Orchestra(maestro = this.maestro, screenshotsDir = this.screenshotsDir.toPath())
+    this.orchestra = Orchestra(maestro = this.maestro)
   }
 
   private fun reconnectIfDisconnected() {
