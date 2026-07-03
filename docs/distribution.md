@@ -21,56 +21,55 @@ So `brew install` was always the intended distribution channel — it was just h
 to `takahirom`. This fork re-points it to **Entertech** (download-url → `Entertech/arbigent`,
 homebrew-tap → `Entertech/homebrew-tap`).
 
-## One-time setup to make fork releases work
+## One-time setup (done)
 
-1. **Create the tap repo** `Entertech/homebrew-tap` with an initial `Formula/arbigent.rb`
-   (see below). The bump-action *updates* an existing formula; it must exist first.
-   Easiest correct base: copy upstream's proven formula from
-   `https://github.com/takahirom/homebrew-repo/blob/main/Formula/arbigent.rb` and change
-   the repo/url to Entertech.
-2. **Set repo secret `COMMITTER_TOKEN`** on `Entertech/arbigent` — a PAT (classic: `repo`,
-   or fine-grained with Contents:write on the tap repo) so the action can push the formula
-   bump to `Entertech/homebrew-tap`.
-3. (Already done) **Maestro fork on Maven Central** (`ai.looktech:maestro-* 2.6.1-looktech.0`)
+1. **Tap repo** `Entertech/homebrew-tap` — created as a **private** repo. The formula
+   (`Formula/arbigent.rb`) lives there, including the auth design below. The bump-action
+   *updates* an existing formula, so this had to exist before the first release.
+2. **Repo secret `COMMITER_TOKEN`** on `Entertech/arbigent` — a PAT with write access to
+   the tap repo so the action can push the formula bump. NOTE: the secret is spelled
+   with a single T (`COMMITER_TOKEN`); the workflow maps it onto the action's
+   `COMMITTER_TOKEN` env var.
+3. **Maestro fork on Maven Central** (`ai.looktech:maestro-* 2.6.1-looktech.1`)
    — required so CI can resolve the dependency without your local `~/.m2`.
 4. (Optional) `GRADLE_ENCRYPTION_KEY` secret for the Gradle build-cache action.
+
+## Private-tap auth (how users install with no token setup)
+
+Two auth surfaces, solved separately:
+
+- **Tapping the private repo** — plain git over SSH; every engineer's existing SSH key works:
+  `brew tap entertech/tap git@github.com:Entertech/homebrew-tap.git`
+- **Downloading the release asset** — SSH does not help here (release assets are HTTP, and
+  `browser_download_url` on private repos 404s even with a token). The formula uses a custom
+  `GhReleaseDownloadStrategy` that shells out to `gh release download`, reusing the
+  `gh auth login` engineers already have. This also works fine while `Entertech/arbigent`
+  is public, so the tap keeps working either way.
 
 ## Cutting a release
 
 ```bash
-# arbigent version comes from the git tag (palantir git-version).
+# arbigent version comes from the git tag (palantir git-version),
+# so the tarball is named arbigent-<tag>.tar.gz — matching the formula URL.
 git tag 0.74.0-looktech.0
 git push origin 0.74.0-looktech.0
-# build-cli.yaml fires on the tag -> Release assets + Homebrew formula bump
 ```
-Then: `brew install entertech/tap/arbigent`.
 
-## Starter formula (`Entertech/homebrew-tap` → `Formula/arbigent.rb`)
+**Fork caveat:** event-triggered workflows (push/tag) do NOT fire on this fork until an
+org admin enables workflows from the repo's Actions tab ("I understand my workflows…"
+button on https://github.com/Entertech/arbigent/actions). Until then, trigger the release
+manually — `workflow_dispatch` works regardless:
 
-The bump-action overwrites `url`+`sha256` each release; the rest is the install logic.
-Verify the install block against the actual tarball layout (Gradle distTar extracts to
-`arbigent-<ver>/{bin,lib}`; Homebrew enters the single root dir, so `Dir["*"]` = `bin`,`lib`).
+```bash
+gh workflow run publish-cli -R Entertech/arbigent --ref 0.74.0-looktech.0
+```
 
-```ruby
-class Arbigent < Formula
-  desc "AI-powered cross-platform (Android & iOS) mobile UI test agent — Looktech fork"
-  homepage "https://github.com/Entertech/arbigent"
-  url "https://github.com/Entertech/arbigent/releases/download/0.74.0-looktech.0/arbigent-0.74.0-looktech.0.tar.gz"
-  sha256 "REPLACE_WITH_TARBALL_SHA256"  # bump-homebrew-formula-action overwrites this
-  license "Apache-2.0"
+The run attaches the tarball to the GitHub Release and pushes the formula bump
+(url + sha256) to the tap. Then users install with:
 
-  depends_on "openjdk@17"
-
-  def install
-    libexec.install Dir["*"]
-    (bin/"arbigent").write_env_script libexec/"bin/arbigent",
-      JAVA_HOME: Formula["openjdk@17"].opt_prefix
-  end
-
-  test do
-    assert_match "arbigent", shell_output("#{bin}/arbigent --help 2>&1", 2)
-  end
-end
+```bash
+brew tap entertech/tap git@github.com:Entertech/homebrew-tap.git
+brew install entertech/tap/arbigent   # needs `gh auth login` once
 ```
 
 ## Runtime prerequisites for users (not bundled)
