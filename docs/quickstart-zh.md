@@ -31,6 +31,10 @@ export OPENAI_API_KEY="<智谱 key>"   # 建议写进 ~/.zshrc
 
 ## 写测试场景
 
+**最快起步:直接复制仓库里的参考模板 [examples/run-template](../examples/run-template/)**——
+含带注释的 `project.yaml`、团队共享的 `.arbigent/settings.yml`(模型/endpoint 默认值,
+配好后日常只需 `arbigent run`)和个人覆盖示例(设备 ID)。以下为手写说明。
+
 新建一个目录,里面放 `project.yaml`:
 
 ```yaml

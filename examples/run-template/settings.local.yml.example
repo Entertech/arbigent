@@ -1,0 +1,11 @@
+# 个人覆盖示例 —— 复制为 .arbigent/settings.local.yml(已被 .gitignore,不会提交)。
+# 这里只放和你机器/手机相关的值;优先级高于 .arbigent/settings.yml。
+
+run:
+  # 目标设备:先跑 `arbigent devices` 查 ID(Android 用序列号,iOS 用 UDID)。
+  # 只连一台设备时可以不配。
+  device: "ZY22KBFG6T"
+
+  # 个人想换模型也可以在这里覆盖,例如:
+  # ai-type: "gemini"
+  # gemini-model-name: "gemini-3-flash-preview"

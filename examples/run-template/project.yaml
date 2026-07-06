@@ -1,0 +1,36 @@
+# arbigent 场景参考文件 — 复制整个 run-template 目录作为你的测试项目起点。
+# 运行参数(模型/设备/OS)不写在这里,写在 .arbigent/settings.yml(见同目录)。
+
+settings:
+  aiOptions:
+    extraBody:
+      # 仅当用 DashScope qwen3.6-flash 时需要(它默认开思考模式,与工具调用冲突);
+      # 用 glm-5v-turbo / gemini 时这段可整体删除。
+      enable_thinking: false
+
+scenarios:
+# ── 冒烟场景:任何 Android 设备可跑,用来验证环境是否配通 ──
+- id: "smoke-settings-battery"
+  goal: "Open the 'Battery' page inside the Settings app. Tap the Battery entry in the settings list (scroll down if it is not visible). The goal is reached when the Battery screen is shown."
+  maxStep: 8        # 注意字段名是 maxStep(写错会被静默忽略,默认 10)
+  maxRetry: 0       # 0 = 只跑一次;默认 3(失败自动重试 3 次)
+  tags:
+  - name: "smoke"
+  initializationMethods:
+  - type: "LaunchApp"
+    packageName: "com.android.settings"
+
+# ── 带变量的模板场景:--variables 'search_term=Bluetooth' 传值,可复用 ──
+- id: "settings-search"
+  goal: "In the Settings app, use the search function to search for '{{search_term}}' and open the first search result. The goal is reached when the result page for '{{search_term}}' is shown."
+  maxStep: 10
+  tags:
+  - name: "smoke"
+  initializationMethods:
+  - type: "LaunchApp"
+    packageName: "com.android.settings"
+
+# 写 goal 的要点:
+# 1) 英文写,并明确完成判定:加一句 "The goal is reached when ..."
+# 2) maxStep 给足但别过大:一步 ≈ 一次点击/滑动,到上限即判失败
+# 3) 多步/计数类任务模型会自带进度状态,goal 里把序数(第 N 个)写清楚

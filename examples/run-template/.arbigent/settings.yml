@@ -1,0 +1,26 @@
+# 团队共享的 arbigent 运行默认值(可提交进 git)。
+# CLI 在【当前目录】下按 .arbigent/settings.local.yml > settings.local.yaml >
+# settings.yml > settings.yaml 的优先级读取;命令行参数永远最优先。
+# 个人机器相关的覆盖(如 device)写到 settings.local.yml,不要提交。
+#
+# ⚠️ API key 一律走环境变量(OPENAI_API_KEY / GEMINI_API_KEY),不要写进本文件。
+
+# `run.` 前缀 = 只对 run 命令生效;不带前缀的顶层键对所有子命令生效。
+run:
+  os: "android"
+  project-file: "project.yaml"
+  # 日常默认:GLM(国内直连,多步任务 2/2 最快)。key: export OPENAI_API_KEY=<智谱key>
+  ai-type: "openai"
+  openai-endpoint: "https://open.bigmodel.cn/api/paas/v4/"
+  openai-model-name: "glm-5v-turbo"
+
+  # ── 备选配置(整段替换上面三行) ──
+  # 难场景/iOS 兜底:Gemini(最稳,需代理)。key: export GEMINI_API_KEY=<key>
+  #   ai-type: "gemini"
+  #   gemini-model-name: "gemini-3-flash-preview"
+  #
+  # 省钱跑简单冒烟:qwen3.6-flash(约 GLM 1/4 价,需保留 project.yaml 里的
+  # enable_thinking: false)。key: export OPENAI_API_KEY=<DashScope key>
+  #   ai-type: "openai"
+  #   openai-endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/"
+  #   openai-model-name: "qwen3.6-flash"
