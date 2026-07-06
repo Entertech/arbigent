@@ -10,7 +10,7 @@
 #       enable_thinking: false
 
 scenarios:
-# ── 冒烟场景:任何 Android 设备可跑,用来验证环境是否配通 ──
+# ── Android 冒烟:任何 Android 设备可跑,验证环境是否配通(--os=android)──
 - id: "smoke-settings-battery"
   goal: "Open the 'Battery' page inside the Settings app. Tap the Battery entry in the settings list (scroll down if it is not visible). The goal is reached when the Battery screen is shown."
   maxStep: 8        # 注意字段名是 maxStep(写错会被静默忽略,默认 10)
@@ -20,6 +20,18 @@ scenarios:
   initializationMethods:
   - type: "LaunchApp"
     packageName: "com.android.settings"
+
+# ── iOS 冒烟:--os=ios 时跑这个(注意场景是分平台的,LaunchApp 的
+#    packageName 在 iOS 上填 bundle id,安卓包名在 iPhone 上会直接失败)──
+- id: "smoke-ios-settings-battery"
+  goal: "Open the 'Battery' (电池) page inside the iOS Settings app. Do NOT use the search field; scroll down the settings list if the Battery entry is not visible, then tap it. The goal is reached when the Battery screen with the battery level chart is shown."
+  maxStep: 12
+  maxRetry: 0
+  tags:
+  - name: "smoke-ios"
+  initializationMethods:
+  - type: "LaunchApp"
+    packageName: "com.apple.Preferences"
 
 # ── 带变量的模板场景:--variables 'search_term=Bluetooth' 传值,可复用 ──
 - id: "settings-search"
