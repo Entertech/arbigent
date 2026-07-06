@@ -532,3 +532,24 @@ are conservative).
   no HF/proxy traffic needed. Serve: `scripts/local-vl-server.sh` (pass the
   modelscope cache path as MODEL; pass the SAME path as --openai-model-name, the
   mlx server resolves the request's model field).
+
+### GLM-4.6V-Flash 9B local (mlx) — MEASURED 2026-07-06: runs, not yet usable
+
+Weights: ModelScope ZhipuAI/GLM-4.6V-Flash + mlx-community 4bit/8bit (the 106B
+GLM-4.6V-4bit also exists there for a 128G machine). mlx-vlm 0.6.3 has glm4v +
+glm4v_moe support. Serving + arbigent tool path work end-to-end (~8s/grounding
+call on the M5 Pro). BUT with the 4bit mlx build:
+
+- **Y-axis coordinate skew on tall phone screenshots**: plain 0-1000 reading 0/4;
+  applying a ~0.78 y-scale correction recovers 3/4 (x-axis is accurate) — looks
+  like mlx glm4v image preprocessing padding, needs a shim or an upstream fix
+  before the ClickAtCoordinates fallback can be trusted.
+- Format compliance mediocre: answers often wrapped in <|begin_of_box|> tokens
+  plus prose preamble instead of the requested bare JSON.
+- Real-device smoke (Pixel 8, settings-battery): looped on the same screen
+  (LOOP DETECTED x5), did not finish in 10min across retries — the "beats
+  Qwen3-VL-8B" claim does not hold under 4bit+mlx today.
+
+Verdict: local default stays Qwen3-VL (30B-A3B on 48G). Re-evaluate GLM-4.6V-Flash
+on llama.cpp/vLLM stacks (3060 / AI Max) or after mlx preprocessing matures; the
+106B GLM-4.6V remains the headline candidate for a 128G AI Max box.
