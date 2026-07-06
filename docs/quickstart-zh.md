@@ -92,7 +92,7 @@ arbigent run \
 |---|---|
 | 每步都说 "screen is identical",空转到失败 | 手机锁屏或灭屏了。解锁、亮屏,开发者选项里开"充电时屏幕不休眠" |
 | 连了多台安卓机,跑到了别的手机上 | CLI 固定选第一台设备,跑测试时只连目标设备 |
-| `tool_choice ... not support ... thinking mode` 报错 | 该模型默认开思考模式(如 DashScope qwen3.6-flash),换 glm-5v-turbo 或 gemini |
+| `tool_choice ... not support ... thinking mode` 报错 | 该模型默认开思考模式(如 DashScope qwen3.6-flash)。在 project.yaml 里关掉即可:`settings:` → `aiOptions:` → `extraBody:` → `enable_thinking: false`(注意必须嵌在 `settings:` 下) |
 | `env: gh: No such file or directory`(安装时) | 没装 GitHub CLI:`brew install gh && gh auth login` |
 | iOS 连不上 / XCTest 超时 | 手机重新插拔;仍不行就重启 iPhone(实测能解决 CoreDevice 卡死) |
 

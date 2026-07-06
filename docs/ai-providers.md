@@ -447,3 +447,28 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   per run, fastest Android success); keep gemini-3-flash-preview for hard multi-step
   or iOS-critical cases (most reliable 2/2, fastest on iOS) where +几毛 per run is
   irrelevant. Bulk regression → local Qwen3-VL-8B at zero API cost.
+
+## qwen3.6-flash DOES work in arbigent — extraBody unlock (verified 2026-07-03)
+
+- The earlier blocker (`400 ... tool_choice ... not support ... thinking mode`) is
+  just DashScope's default-on thinking, and arbigent ALREADY has the plumbing to fix
+  it: `ArbigentAiOptions.extraBody` merges arbitrary JSON into the request body
+  (protected fields: model/messages/tools/tool_choice). In the project YAML it MUST
+  be nested under `settings:` (a root-level `aiOptions:` is silently ignored):
+  ```yaml
+  settings:
+    aiOptions:
+      extraBody:
+        enable_thinking: false
+  ```
+- Verified by replaying arbigent's exact logged request (strict tools + screenshot +
+  `enable_thinking:false` + `tool_choice:required`) against DashScope: **200 in 1.6s**
+  with a valid `perform_*` tool call and empty `reasoning_content`. The on-device
+  green run is pending only a device unlock (both bench phones PIN-locked; a dozing
+  Pixel 8 stalls the loop device-side, which also produced a red-herring "hang" during
+  this investigation).
+- Cost angle: ¥1.2/M input ≈ ¼ of glm-5v-turbo's ¥5/M → a 7-10-step scenario lands
+  around ¥0.1 vs GLM's ¥0.3-0.4. CAVEAT: with thinking off this is a fast
+  NON-reasoning agent — its sibling qwen3-vl-flash went 0/2 on the hard multi-step
+  store task. Position it for simple/short scenarios; keep glm-5v-turbo/gemini for
+  complex navigation. Head-to-head on the team's real scenario suite still TODO.
