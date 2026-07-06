@@ -154,14 +154,37 @@ fun createAiProvider(
   }
 }
 
-fun connectDevice(os: String): ArbigentDevice {
-  val deviceOs =
-    ArbigentDeviceOs.entries.find { it.name.toLowerCasePreservingASCIIRules() == os.toLowerCasePreservingASCIIRules() }
-      ?: throw IllegalArgumentException(
-        "Invalid OS. The OS should be one of ${
-          ArbigentDeviceOs.entries
-            .joinToString(", ") { it.name.toLowerCasePreservingASCIIRules() }
-        }")
-  return fetchAvailableDevicesByOs(deviceOs).firstOrNull()?.connectToDevice()
-    ?: throw IllegalArgumentException("No available device found")
+fun CliktCommand.deviceOption() = defaultOption(
+  "--device",
+  help = "Device ID to run on (Android serial or iOS UDID). Run `arbigent devices` to list connected devices. Defaults to the first available device."
+)
+
+fun parseDeviceOs(os: String): ArbigentDeviceOs =
+  ArbigentDeviceOs.entries.find { it.name.toLowerCasePreservingASCIIRules() == os.toLowerCasePreservingASCIIRules() }
+    ?: throw IllegalArgumentException(
+      "Invalid OS. The OS should be one of ${
+        ArbigentDeviceOs.entries
+          .joinToString(", ") { it.name.toLowerCasePreservingASCIIRules() }
+      }")
+
+fun connectDevice(os: String, deviceId: String? = null): ArbigentDevice {
+  val deviceOs = parseDeviceOs(os)
+  val requested = deviceId?.takeIf { it.isNotBlank() }
+  val devices = fetchAvailableDevicesByOs(deviceOs, requested)
+  val selected = if (requested == null) {
+    devices.firstOrNull()
+  } else {
+    // Every OS branch of fetchAvailableDevicesByOs throws when `requested` matches
+    // nothing, so this list is already filtered; the fallback only covers matches
+    // via an alternate id form (adb transport id, iOS coreDeviceIdentifier).
+    devices.firstOrNull { it.id == requested } ?: devices.firstOrNull()
+  }
+  return selected?.connectToDevice()
+    ?: throw IllegalArgumentException(
+      if (requested != null) {
+        "No available $os device matches --device=$requested. Run `arbigent devices` to list connected devices."
+      } else {
+        "No available $os device found. Run `arbigent devices` to list connected devices."
+      }
+    )
 }

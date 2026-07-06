@@ -496,8 +496,9 @@ for simple/short scenarios (4× cheaper, fastest), glm-5v-turbo/gemini for multi
 
 - **iOS device pick**: the CLI takes the FIRST iOS device; a wirelessly-paired iPhone
   (15 Pro) shadowed the USB 12 mini → xcodebuild installed to an unreachable device →
-  `IOSDriverTimeoutException`. Pin with `ARBIGENT_IOS_REAL_DEVICE_ID=<hex UDID>`
-  (xcodebuild-style id, e.g. 00008101-…).
+  `IOSDriverTimeoutException`. Pin with `--device=<hex UDID>` (xcodebuild-style id,
+  e.g. 00008101-…; list ids with `arbigent devices`). The
+  `ARBIGENT_IOS_REAL_DEVICE_ID` env var remains as a fallback.
 - **Zombie xcodebuildmcp processes** (respawned by other agent sessions) again caused
   `not-currently-connectable`; `pkill -f xcodebuildmcp` → driver up in 14s. Check this
   BEFORE rebooting the phone — this round's reboot was probably unnecessary.

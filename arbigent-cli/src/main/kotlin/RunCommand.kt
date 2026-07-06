@@ -59,6 +59,8 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     .choice("android", "ios", "web")
     .default("android")
 
+  private val deviceId by deviceOption()
+
   // Common options using extension functions with automatic property file detection
   private val projectFile by projectFileOption()
   private val logLevel by logLevelOption()
@@ -191,7 +193,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
     }
 
     configureHostSettings(listOf("run"))
-    device = connectDevice(os)
+    device = connectDevice(os, deviceId)
     Runtime.getRuntime().addShutdownHook(object : Thread() {
       override fun run() {
         arbigentProject.cancel()

@@ -5,16 +5,31 @@ import java.util.concurrent.TimeUnit
 internal object IosCodeSigningTeamResolver {
   private val teamIdRegex = Regex("""\(([A-Z0-9]{10})\)""")
 
+  private class CachedTeam(val id: String?)
+
+  // Detection shells out to `security find-identity` and may warn; configs are
+  // constructed once per listed device, so cache the outcome. A 0-team result is
+  // NOT cached: it can be transient (locked keychain, `security` timeout, identity
+  // installed later) and long-lived processes (arbigent-ui) must be able to pick
+  // the identity up on a later refresh.
+  @Volatile
+  private var cachedTeam: CachedTeam? = null
+
   fun autoDetectTeamId(): String? {
+    cachedTeam?.let { return it.id }
     val teams = detectTeamIds()
     return when (teams.size) {
       0 -> null
-      1 -> teams.single().also { arbigentInfoLog("Auto-detected Apple Team ID: $it") }
+      1 -> teams.single().also {
+        cachedTeam = CachedTeam(it)
+        arbigentInfoLog("Auto-detected Apple Team ID: $it")
+      }
       else -> {
         arbigentWarnLog(
           "Multiple Apple Team IDs are available for code signing: ${teams.joinToString(", ")}. " +
             "Set ios-xctest-apple-team-id in .arbigent/settings.local.yml."
         )
+        cachedTeam = CachedTeam(null)
         null
       }
     }

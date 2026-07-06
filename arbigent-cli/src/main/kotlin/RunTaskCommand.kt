@@ -54,6 +54,8 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     .choice("android", "ios", "web")
     .default("android")
 
+  private val deviceId by deviceOption()
+
   private val logLevel by logLevelOption()
   private val logFile by logFileOption()
   private val workingDirectory by workingDirectoryOption()
@@ -65,7 +67,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
     val (resultDir, resultFile) = setupArbigentFiles(workingDirectory, logFile)
     val aiProvider = createAiProvider(aiType, aiApiLoggingEnabled, workingDirectory)
     configureHostSettings(listOf("run.task", "task", "run"))
-    val device = connectDevice(os)
+    val device = connectDevice(os, deviceId)
 
     try {
       val scenarioContent = ArbigentScenarioContent(

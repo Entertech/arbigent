@@ -76,6 +76,7 @@ arbigent run \
 
 - 去掉 `--scenario-ids` 则跑全部场景;可用 `--tags` 按标签筛选。
 - iOS 换 `--os=ios`(需要 Xcode,首次会往手机装 XCTest runner)。
+- 连了多台设备时,先 `arbigent devices` 查设备 ID,再加 `--device=<DEVICE ID>` 指定目标机。
 - 先验证配置不花钱:加 `--dry-run`。
 
 ## 看结果
@@ -91,10 +92,10 @@ arbigent run \
 | 现象 | 原因 / 处理 |
 |---|---|
 | 每步都说 "screen is identical",空转到失败 | 手机锁屏或灭屏了。解锁、亮屏,开发者选项里开"充电时屏幕不休眠" |
-| 连了多台安卓机,跑到了别的手机上 | CLI 固定选第一台设备,跑测试时只连目标设备 |
+| 连了多台设备,跑到了别的手机上 | 先 `arbigent devices` 看设备列表,然后 `arbigent run --device=<DEVICE ID> ...` 指定目标机(Android 用序列号,iOS 用 UDID) |
 | `tool_choice ... not support ... thinking mode` 报错 | 该模型默认开思考模式(如 DashScope qwen3.6-flash)。在 project.yaml 里关掉即可:`settings:` → `aiOptions:` → `extraBody:` → `enable_thinking: false`(注意必须嵌在 `settings:` 下) |
 | `env: gh: No such file or directory`(安装时) | 没装 GitHub CLI:`brew install gh && gh auth login` |
-| iOS 连不上 / XCTest 超时 | 按序排查:① 电脑上有多台 iPhone(含无线配对的)时 CLI 会选错设备,用 `ARBIGENT_IOS_REAL_DEVICE_ID=<UDID>` 钉死目标机;② 杀掉占用设备的残留进程 `pkill -f xcodebuildmcp`;③ 都不行再重启 iPhone |
+| iOS 连不上 / XCTest 超时 | 按序排查:① 电脑上有多台 iPhone(含无线配对的)时 CLI 会选错设备,用 `--device=<UDID>` 钉死目标机(`arbigent devices` 查 UDID);② 杀掉占用设备的残留进程 `pkill -f xcodebuildmcp`;③ 都不行再重启 iPhone |
 | 场景步数/重试配置不生效 | 字段名是 `maxStep` 和 `maxRetry`(写错如 maxStepCount 会被静默忽略,默认 10 步 / 重试 3 次) |
 
 模型选型、各家 API 的差异见 [ai-providers.md](ai-providers.md)。

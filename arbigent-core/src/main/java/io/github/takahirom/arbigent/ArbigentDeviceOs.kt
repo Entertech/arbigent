@@ -36,10 +36,28 @@ public sealed interface ArbigentAvailableDevice {
   public val deviceOs: ArbigentDeviceOs
   public val name: String
 
+  /**
+   * Stable identifier a user can pass to select this device (Android serial,
+   * iOS UDID). Falls back to [name] where no better identifier exists.
+   */
+  public val id: String get() = name
+
+  /** Human-readable label for device listings; defaults to [name]. */
+  public val description: String get() = name
+
   // Do not use data class because dadb return true for equals
   public class Android(private val dadb: Dadb) : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Android
     override val name: String = dadb.toString()
+    override val id: String by lazy {
+      runCatching { dadb.shell("getprop ro.serialno").output.trim() }
+        .getOrNull()?.takeIf { it.isNotBlank() } ?: dadb.toString()
+    }
+    override val description: String by lazy {
+      val model = runCatching { dadb.shell("getprop ro.product.model").output.trim() }
+        .getOrNull()?.takeIf { it.isNotBlank() }
+      if (model != null) "$model ($name)" else name
+    }
 
     /**
      * Foreground app package, best effort. Maestro's Android hierarchy drops the
@@ -86,6 +104,8 @@ public sealed interface ArbigentAvailableDevice {
   ) : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Ios
     override val name: String = device.name
+    override val id: String = device.udid
+    override val description: String = "${device.name} (simulator)"
     override fun connectToDevice(): ArbigentDevice {
       val port = port
       val host = host
@@ -188,6 +208,7 @@ public sealed interface ArbigentAvailableDevice {
   ) : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Ios
     override val name: String = "iOS real mirror${config.deviceId?.let { " ($it)" }.orEmpty()}"
+    override val id: String = config.deviceId ?: name
 
     public override fun connectToDevice(): ArbigentDevice {
       return IosRealMirrorDevice(config)
@@ -196,9 +217,13 @@ public sealed interface ArbigentAvailableDevice {
 
   public class IOSRealXCTest(
     private val config: IosRealXCTestDeviceConfig,
+    private val connectable: Boolean = true,
   ) : ArbigentAvailableDevice {
     override val deviceOs: ArbigentDeviceOs = ArbigentDeviceOs.Ios
     override val name: String = "iOS real XCTest (${config.deviceName}, ${config.deviceId})"
+    override val id: String = config.deviceId
+    override val description: String =
+      "${config.deviceName} (real device${if (connectable) "" else ", NOT currently connectable — unlock/replug the phone"})"
 
     public override fun connectToDevice(): ArbigentDevice {
       val portForwarder = if (config.autoStartIproxy) {

@@ -124,13 +124,17 @@ internal object IosRealDeviceCatalog {
       ?: throwNoDevice(requestedDeviceId)
   }
 
-  fun availableDevices(requestedDeviceId: String?): List<IosRealDevice> {
-    return selectDevices(pairedDevices(), requestedDeviceId)
+  fun availableDevices(
+    requestedDeviceId: String?,
+    includeUnconnectable: Boolean = false,
+  ): List<IosRealDevice> {
+    return selectDevices(pairedDevices(), requestedDeviceId, includeUnconnectable)
   }
 
   internal fun selectDevices(
     pairedDevices: List<IosRealDevice>,
     requestedDeviceId: String?,
+    includeUnconnectable: Boolean = false,
   ): List<IosRealDevice> {
     if (requestedDeviceId != null) {
       val selected = pairedDevices.firstOrNull { device ->
@@ -152,9 +156,15 @@ internal object IosRealDeviceCatalog {
     // paired iPhone can shadow a booted simulator: DeviceFinder orders real
     // devices before simulators and the CLI takes the first candidate without
     // trying the next one, so it would connect-fail on the offline phone.
-    return pairedDevices
-      .filter { it.canConnect }
-      .sortedWith(compareBy<IosRealDevice> { it.name }.thenBy { it.udid })
+    // includeUnconnectable is for LISTING (`arbigent devices`): paired-but-offline
+    // phones must be visible there so users can pin them with --device.
+    val sorted = pairedDevices
+      .sortedWith(
+        compareByDescending<IosRealDevice> { it.canConnect }
+          .thenBy { it.name }
+          .thenBy { it.udid }
+      )
+    return if (includeUnconnectable) sorted else sorted.filter { it.canConnect }
   }
 
   private fun pairedDevices(): List<IosRealDevice> {
