@@ -508,3 +508,27 @@ for simple/short scenarios (4× cheaper, fastest), glm-5v-turbo/gemini for multi
   id is needed. Don't uninstall the on-device runner casually.
 - **Scenario YAML field names**: `maxStep` (NOT maxStepCount — unknown keys are
   silently ignored, default 10) and `maxRetry: 0` for single-attempt benches.
+
+## Local fleet options: Ali vs ByteDance — MEASURED 2026-07-06 (M5 Pro 48G)
+
+User fleet: 48G M5 Pro + 16G M4 + 16G M2 + RTX 3060 12G. Both vendors' viable
+open weights tested locally (ModelScope, mlx-vlm 0.6.3, real moto g ground truth,
+4 app-drawer targets; all three servers resident during tests — absolute latencies
+are conservative).
+
+| model (all 4bit) | grounding | protocol compliance | arbigent smoke (real device) |
+|---|---|---|---|
+| **Qwen3-VL-30B-A3B** (~17G) | 3/4 @~9.7s | ✅ follows 0-1000 JSON | ✅ **SUCCESS 3 steps/82s** — zero-code via mlx server |
+| Qwen3-VL-8B (~5.4G) | 3/4 @~9.8s | ✅ cleanest JSON | ❌ today 0/4 attempts (June: ✅ 3st/34.6s on Pixel; memory pressure suspected — 3 servers resident) |
+| **UI-TARS-1.5-7B** (ByteDance, ~4.6G) | 2-3/4 @~7s, pixel-exact when right | ❌ IGNORES format instructions — always answers `<|box_start|>(x,y)<|box_end|>` absolute pixels | ✖ not attempted: needs a native-action adapter (same wall as gui-plus) |
+
+- **Verdict**: Ali is the deployable line. 48G Mac → **Qwen3-VL-30B-A3B-4bit** (MoE,
+  3B active; navigates more decisively than 8B). 16G Macs → 8B-4bit (M2: consider 4B).
+  3060 12G → 8B AWQ via vLLM or GGUF via Ollama (untested here — no access yet).
+  ByteDance ships NO deployable general VLM: Doubao/Seed closed; UI-TARS-2 paper-only
+  (weights unreleased, gh issue #213); UI-TARS-1.5-7B is open+strong at GUI pointing
+  but protocol-locked to its own action format → adapter project, not a drop-in.
+- ModelScope has ready mlx conversions for all of the above (incl. UI-TARS 4bit) —
+  no HF/proxy traffic needed. Serve: `scripts/local-vl-server.sh` (pass the
+  modelscope cache path as MODEL; pass the SAME path as --openai-model-name, the
+  mlx server resolves the request's model field).
