@@ -429,3 +429,21 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
     ~5-7K-token uitree+context prompt in ~7-9s/step — slower than its ~2.5s
     grounding-only call because the prompt is much larger, but completely usable
     offline / zero-API-cost). Stop the server with `pkill -f mlx_vlm.server`.
+
+## Pricing: glm-5v-turbo vs gemini-3-flash-preview (checked 2026-07-03)
+
+- **glm-5v-turbo** (bigmodel.cn open platform, CN, input-length <32K tier — arbigent
+  steps are ~5K, always this tier): **¥5/M input, ¥22/M output**, cache-hit ¥1.2/M
+  (cache storage free for now). The ≥32K tier is ¥7/¥26.
+- **gemini-3-flash-preview** (Google AI): **$0.50/M input, $3.00/M output** ≈ ¥3.6/¥21.6
+  at 7.2 CNY/USD. Sticker price is slightly BELOW GLM — but it is a reasoning model
+  whose thinking tokens bill as OUTPUT, so real per-run cost lands above GLM.
+- **Measured arbigent consumption** (glm-5v-turbo, real run 2026-07-03): avg
+  **~5.2K prompt + ~0.55K completion per step** (screenshot included). Per step
+  ≈ ¥0.04; a typical 7-10-step scenario ≈ **¥0.3–0.4**. Gemini estimate for the same
+  scenario: input comparable, output 3-6× larger from thinking (its 324s-for-7-steps
+  Android run vs GLM's 128s implies heavy thought) → **≈ ¥0.6–1.0 per scenario**.
+- **Verdict**: glm-5v-turbo is the cost/latency default (CN-direct, no proxy, cheaper
+  per run, fastest Android success); keep gemini-3-flash-preview for hard multi-step
+  or iOS-critical cases (most reliable 2/2, fastest on iOS) where +几毛 per run is
+  irrelevant. Bulk regression → local Qwen3-VL-8B at zero API cost.
