@@ -1,12 +1,13 @@
 # arbigent 场景参考文件 — 复制整个 run-template 目录作为你的测试项目起点。
 # 运行参数(模型/设备/OS)不写在这里,写在 .arbigent/settings.yml(见同目录)。
 
-settings:
-  aiOptions:
-    extraBody:
-      # 仅当用 DashScope qwen3.6-flash 时需要(它默认开思考模式,与工具调用冲突);
-      # 用 glm-5v-turbo / gemini 时这段可整体删除。
-      enable_thinking: false
+# ⚠️ 仅当用 DashScope qwen3.6-flash 时取消下面的注释(它默认开思考模式,与工具
+# 调用冲突)。用 gemini 时必须保持注释:Gemini 对未知字段严格校验,带上这个参数
+# 会直接 400 "Unknown name enable_thinking"。glm 会忽略它,但也没必要带。
+# settings:
+#   aiOptions:
+#     extraBody:
+#       enable_thinking: false
 
 scenarios:
 # ── 冒烟场景:任何 Android 设备可跑,用来验证环境是否配通 ──

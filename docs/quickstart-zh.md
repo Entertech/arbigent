@@ -98,6 +98,8 @@ arbigent run \
 | 每步都说 "screen is identical",空转到失败 | 手机锁屏或灭屏了。解锁、亮屏,开发者选项里开"充电时屏幕不休眠" |
 | 连了多台设备,跑到了别的手机上 | 先 `arbigent devices` 看设备列表,然后 `arbigent run --device=<DEVICE ID> ...` 指定目标机(Android 用序列号,iOS 用 UDID) |
 | `tool_choice ... not support ... thinking mode` 报错 | 该模型默认开思考模式(如 DashScope qwen3.6-flash)。在 project.yaml 里关掉即可:`settings:` → `aiOptions:` → `extraBody:` → `enable_thinking: false`(注意必须嵌在 `settings:` 下) |
+| Gemini 报 `400 Unknown name "enable_thinking"` | 上一行那个参数是 qwen 专用的;Gemini 对未知字段严格校验会直接拒收。切 Gemini 前把 project.yaml 里的 `extraBody` 段删掉或注释 |
+| Gemini 每步都报 `Failed to call API: 400/404` | 忘了传 `--gemini-model-name`(默认值 gemini-1.5-flash 已下线),用 `gemini-3-flash-preview` |
 | `env: gh: No such file or directory`(安装时) | 没装 GitHub CLI:`brew install gh && gh auth login` |
 | iOS 连不上 / XCTest 超时 | 按序排查:① 电脑上有多台 iPhone(含无线配对的)时 CLI 会选错设备,用 `--device=<UDID>` 钉死目标机(`arbigent devices` 查 UDID);② 杀掉占用设备的残留进程 `pkill -f xcodebuildmcp`;③ 都不行再重启 iPhone |
 | 场景步数/重试配置不生效 | 字段名是 `maxStep` 和 `maxRetry`(写错如 maxStepCount 会被静默忽略,默认 10 步 / 重试 3 次) |
