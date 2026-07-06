@@ -472,3 +472,38 @@ smoke tests (one real screenshot -> JSON action) + a latest-versions web survey:
   NON-reasoning agent — its sibling qwen3-vl-flash went 0/2 on the hard multi-step
   store task. Position it for simple/short scenarios; keep glm-5v-turbo/gemini for
   complex navigation. Head-to-head on the team's real scenario suite still TODO.
+
+## qwen3.6-flash multi-step store bench — MEASURED 2026-07-06 (Pixel 8 + iPhone 12 mini)
+
+Same task as the 2026-06-17 bench (home → store → 2nd popular free app → 5th review),
+maxStep=20, maxRetry=0, thinking disabled via settings.aiOptions.extraBody.
+
+| run | result | trajectory |
+|---|---|---|
+| Android #1 | ❌ 13st/56s | reached the CORRECT app's reviews page, then emitted a non-numeric ClickWithIndex arg → fatal in single-attempt mode |
+| Android #2 | ❌ 20st/124s | correct reviews page, exhausted steps while counting to the 5th review |
+| iOS #1 | ❌ 1st/5s | "App Store icon is not visible" → declared Failed at step 1, ignoring the LaunchApp tool |
+| iOS #2 | ❌ 20st/116s | reached reviews by step 19, overscrolled into the App-Privacy section, out of steps |
+
+**Verdict: 0/4 on the hard task — the no-thinking doctrine holds** (June: gemini 2/2,
+glm 2/2, qwen3-vl-flash 0/2). BUT qualitatively far better than qwen3-vl-flash: it now
+consistently REACHES the right screens (navigation solved); it loses on step economy
+(13-20 steps where glm needs 7), impulse decisions (iOS step-1 give-up), and occasional
+malformed tool args. ~4-6s/step vs glm ~18s/step. Recommendation unchanged: qwen3.6-flash
+for simple/short scenarios (4× cheaper, fastest), glm-5v-turbo/gemini for multi-step.
+
+### Infra findings from this bench (real-device iOS)
+
+- **iOS device pick**: the CLI takes the FIRST iOS device; a wirelessly-paired iPhone
+  (15 Pro) shadowed the USB 12 mini → xcodebuild installed to an unreachable device →
+  `IOSDriverTimeoutException`. Pin with `ARBIGENT_IOS_REAL_DEVICE_ID=<hex UDID>`
+  (xcodebuild-style id, e.g. 00008101-…).
+- **Zombie xcodebuildmcp processes** (respawned by other agent sessions) again caused
+  `not-currently-connectable`; `pkill -f xcodebuildmcp` → driver up in 14s. Check this
+  BEFORE rebooting the phone — this round's reboot was probably unnecessary.
+- **Multiple Apple Team IDs** only matters when the driver must be REBUILT
+  (`~/.maestro/maestro-iphoneos-driver-build` products missing). With valid prebuilt
+  products (ours: team B6Y9D6S4KK, profile valid to 2027-06, device included) no team
+  id is needed. Don't uninstall the on-device runner casually.
+- **Scenario YAML field names**: `maxStep` (NOT maxStepCount — unknown keys are
+  silently ignored, default 10) and `maxRetry: 0` for single-attempt benches.
