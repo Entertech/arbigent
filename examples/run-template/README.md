@@ -38,5 +38,21 @@ cp settings.local.yml.example .arbigent/settings.local.yml
 arbigent run --scenario-ids=smoke-settings-battery
 ```
 
-跑完看 `arbigent-result/report.html`。模型选型与常见坑见
+跑完看 `arbigent-result/report.html`。
+
+## 切换模型
+
+团队默认(`settings.yml`)是 glm-5v-turbo。两种切换方式:
+
+```bash
+# 临时(单次运行覆盖,两个 GLM 模型同 key 同 endpoint,只差模型名):
+arbigent run --openai-model-name=glm-4.6v ...
+
+# 持久(写进个人配置,configs/ 下有现成文件):
+cp configs/glm-4.6v.yml .arbigent/settings.local.yml      # 切 GLM-4.6V
+cp configs/glm-5v-turbo.yml .arbigent/settings.local.yml  # 切回 5V-Turbo
+# 注意:settings.local.yml 是整体覆盖生效的,device 等个人配置要合并写在同一文件
+```
+
+模型选型与常见坑见
 [docs/quickstart-zh.md](../../docs/quickstart-zh.md) 和 [docs/ai-providers.md](../../docs/ai-providers.md)。

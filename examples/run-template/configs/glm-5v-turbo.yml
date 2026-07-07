@@ -1,0 +1,10 @@
+# GLM-5V-Turbo 配置 —— 日常默认(多步任务 2/2,Android 最快,~¥0.02/步)。
+# 用法:cp configs/glm-5v-turbo.yml .arbigent/settings.local.yml
+# (个人的 device 等配置合并着写在同一个文件里即可)
+# key:export OPENAI_API_KEY=<智谱 key>
+
+run:
+  ai-type: "openai"
+  openai-endpoint: "https://open.bigmodel.cn/api/paas/v4/"
+  openai-model-name: "glm-5v-turbo"
+  # device: "<你的设备 ID,arbigent devices 查>"

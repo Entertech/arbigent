@@ -1,0 +1,11 @@
+# GLM-4.6V 配置 —— 上一代开源旗舰的 API 版(106B-A12B)。
+# 用途:和 glm-5v-turbo 做对照 / 评估本地部署(它的权重是 MIT 开源的,
+# API 版打平 5v-turbo 的话,买 128G 机器本地跑同款就有依据)。
+# 用法:cp configs/glm-4.6v.yml .arbigent/settings.local.yml
+# key:export OPENAI_API_KEY=<智谱 key>(与 5v-turbo 同一个)
+
+run:
+  ai-type: "openai"
+  openai-endpoint: "https://open.bigmodel.cn/api/paas/v4/"
+  openai-model-name: "glm-4.6v"
+  # device: "<你的设备 ID,arbigent devices 查>"
