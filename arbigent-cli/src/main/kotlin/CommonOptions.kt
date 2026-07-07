@@ -154,6 +154,54 @@ fun createAiProvider(
   }
 }
 
+/**
+ * Returns the non-null project file path, or fails with the same CLI error every command shows
+ * when `--project-file` is missing.
+ */
+fun requireProjectFile(projectFile: String?): String =
+  projectFile
+    ?: throw CliktError("Missing option '--project-file'. Please provide a project file path via command line argument or in .arbigent/settings.local.yml")
+
+/**
+ * Returns true when [projectFile] points to an Android Studio Journeys source: a
+ * `*.journey.xml` / `*_journey.xml` file, or a directory (directories are only valid as journey
+ * sources — the YAML loader requires a file — so the journey loader owns them and reports a clear
+ * error when no journey files are found).
+ */
+fun isJourneyProjectSource(projectFile: String): Boolean {
+  val file = File(projectFile)
+  if (!file.exists()) return false
+  return file.isDirectory || ArbigentJourneyXmlImporter.isJourneyFile(file)
+}
+
+/**
+ * Builds an [ArbigentProject] from [projectFile], loading Journeys XML when the path is a
+ * journey source and falling back to the normal YAML loader otherwise.
+ */
+fun loadArbigentProject(
+  projectFile: String,
+  aiFactory: () -> ArbigentAi,
+  deviceFactory: () -> ArbigentDevice,
+  appSettings: ArbigentAppSettings,
+): ArbigentProject {
+  return if (isJourneyProjectSource(projectFile)) {
+    val projectFileContent = ArbigentJourneyXmlImporter.loadProjectContent(File(projectFile))
+    ArbigentProject(
+      projectFileContent = projectFileContent,
+      aiFactory = aiFactory,
+      deviceFactory = deviceFactory,
+      appSettings = appSettings,
+    )
+  } else {
+    ArbigentProject(
+      file = File(projectFile),
+      aiFactory = aiFactory,
+      deviceFactory = deviceFactory,
+      appSettings = appSettings,
+    )
+  }
+}
+
 fun CliktCommand.deviceOption() = defaultOption(
   "--device",
   help = "Device ID to run on (Android serial or iOS UDID). Run `arbigent devices` to list connected devices. Defaults to the first available device."
