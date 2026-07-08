@@ -101,7 +101,7 @@ arbigent run \
 | Gemini 报 `400 Unknown name "enable_thinking"` | 上一行那个参数是 qwen 专用的;Gemini 对未知字段严格校验会直接拒收。切 Gemini 前把 project.yaml 里的 `extraBody` 段删掉或注释 |
 | Gemini 每步都报 `Failed to call API: 400/404` | 忘了传 `--gemini-model-name`(默认值 gemini-1.5-flash 已下线),用 `gemini-3-flash-preview` |
 | `env: gh: No such file or directory`(安装时) | 没装 GitHub CLI:`brew install gh && gh auth login` |
-| iOS 连不上 / XCTest 超时 | 按序排查:① 电脑上有多台 iPhone(含无线配对的)时 CLI 会选错设备,用 `--device=<UDID>` 钉死目标机(`arbigent devices` 查 UDID);② 杀掉占用设备的残留进程 `pkill -f xcodebuildmcp`;③ 都不行再重启 iPhone |
+| iOS 连不上 / XCTest 超时 | 按序排查:① **iPhone 屏幕锁了**——runner 日志(arbigent-result/maestro-xctest-logs/)出现 "failed to initialize for UI testing" 基本就是它,把 设置→显示与亮度→自动锁定 设为"永不";② 多台 iPhone(含无线配对)时 CLI 会选错设备,用 `--device=<UDID>` 钉死;③ 杀残留进程 `pkill -f xcodebuildmcp; pkill -f "iproxy --udid"`;④ 都不行再重启 iPhone |
 | 场景步数/重试配置不生效 | 字段名是 `maxStep` 和 `maxRetry`(写错如 maxStepCount 会被静默忽略,默认 10 步 / 重试 3 次) |
 
 模型选型、各家 API 的差异见 [ai-providers.md](ai-providers.md)。
