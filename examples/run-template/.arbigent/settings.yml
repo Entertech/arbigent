@@ -19,8 +19,8 @@ run:
   #   ai-type: "gemini"
   #   gemini-model-name: "gemini-3-flash-preview"
   #
-  # 省钱跑简单冒烟:qwen3.6-flash(约 GLM 1/4 价,需保留 project.yaml 里的
+  # 省钱跑简单冒烟:qwen3.7-flash(约 GLM 1/4 价,需保留 project.yaml 里的
   # enable_thinking: false)。key: export OPENAI_API_KEY=<DashScope key>
   #   ai-type: "openai"
   #   openai-endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/"
-  #   openai-model-name: "qwen3.6-flash"
+  #   openai-model-name: "qwen3.7-flash"

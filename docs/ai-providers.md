@@ -572,3 +572,25 @@ comparable 1:1 with the June moto-g numbers):
   Qwen3.8-27B is the pick when 262K context or the newer Agent training matters,
   and the natural candidate for the 16G Macs is still 8B. Ops note: warm the
   server with one small call after start, or the first arbigent step can time out.
+
+## qwen3.7-flash — MEASURED 2026-08-19: the new fast-tier default (replaces qwen3.6-flash)
+
+Shipped 2026-07-15 (found via /v1/models listing; qwen3.8-27b is NOT API-hosted —
+only qwen3.8-max). Same thinking/tool_choice conflict as 3.6 → needs
+`enable_thinking: false` via settings.aiOptions.extraBody. Account note: Bailian
+"free tier only" mode had silently exhausted and 403'd all qwen calls — now off,
+pay-as-you-go.
+
+- **TTFT/speed**: 0.6s forced tool call; grounding 1.8s/call; full arbigent loop
+  ~5-9s/step — fastest tier measured to date.
+- **Grounding (Pixel 8 baseline, 4 targets)**: **4/4** — best score on this baseline.
+- **Store task (hard multi-step)**: navigation is SOLVED — on BOTH Pixel 7 and
+  Pixel 8 it reached the correct 2nd-free-app reviews page in ~7-13 steps, never
+  got lost, zero malformed tool args (vs qwen3.6-flash: 0/4 with loops/give-ups).
+  Pixel 7 run even correctly declared-impossible (the app truly had 1 review) with
+  an accurate reason instead of hallucinating. BUT long-horizon counting (scroll
+  to the 5th review) still exhausts steps — GLM control on the same device/task:
+  ✅ 11 steps/140s SUCCESS. Counting stays a reasoning-tier job.
+- **Verdict for the "no-thinking, short-TTFT, strong" quadrant**: qwen3.7-flash is
+  its best occupant so far — daily short/medium scenarios at flash cost/speed;
+  keep glm-5v-turbo for counting/long-horizon cases.
