@@ -553,3 +553,22 @@ call on the M5 Pro). BUT with the 4bit mlx build:
 Verdict: local default stays Qwen3-VL (30B-A3B on 48G). Re-evaluate GLM-4.6V-Flash
 on llama.cpp/vLLM stacks (3060 / AI Max) or after mlx preprocessing matures; the
 106B GLM-4.6V remains the headline candidate for a 128G AI Max box.
+
+### Qwen3.8-27B local (mlx 4bit) — MEASURED 2026-08-19: works, slightly behind 30B-A3B
+
+Released 2026-08-14 (dense, Apache 2.0, native vision, 262K ctx). ModelScope has
+official weights + mlx-community 4bit (~15G, fits the 48G Mac). DashScope hosts
+`qwen3.8-27b` but this account gets 403 until the model is enabled in the Bailian
+console. Bench (Pixel 8 app-drawer ground truth, 4 targets — NEW baseline, not
+comparable 1:1 with the June moto-g numbers):
+
+- Grounding: **3/4 @ ~9.2s/call warm** (first call 67s incl. model load); one
+  minor JSON quirk (string-typed number, parseable).
+- arbigent real device (Pixel 7, settings-battery): attempt 1 FAILED — cold
+  dense-27B prefill of the full ~6-7K prompt exceeded arbigent's HTTP socket
+  timeout; attempt 2 (warm) ✅ **SUCCESS 3 steps/91.1s** (~30s/step).
+- Verdict: accuracy ties Qwen3-VL-30B-A3B, speed slightly worse (dense vs 3B-active
+  MoE; 91s vs 82s same-class smoke). **30B-A3B stays the 48G-Mac default**;
+  Qwen3.8-27B is the pick when 262K context or the newer Agent training matters,
+  and the natural candidate for the 16G Macs is still 8B. Ops note: warm the
+  server with one small call after start, or the first arbigent step can time out.
