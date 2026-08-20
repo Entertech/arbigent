@@ -594,3 +594,28 @@ pay-as-you-go.
 - **Verdict for the "no-thinking, short-TTFT, strong" quadrant**: qwen3.7-flash is
   its best occupant so far — daily short/medium scenarios at flash cost/speed;
   keep glm-5v-turbo for counting/long-horizon cases.
+
+## Qwen-UI-Agent / MAI-UI-8B — MEASURED 2026-08-20: protocol-native, needs a bigger size
+
+Tongyi-MAI's dedicated GUI-agent foundation model (repo Tongyi-MAI/MAI-UI, Apache 2.0,
+2B/8B released; claims MobileWorld-Real 92.2%, AndroidDaily 97.5%, beating Opus 4.8 /
+Gemini 3.1 Pro / GPT-5.6). ModelScope carries official weights + mlx-community 4bit
+(8B ≈ 6.9G) — no HF/proxy traffic needed.
+
+- **KEY FINDING — no protocol wall** (unlike UI-TARS): its chat template is stock Qwen
+  tool-calling (`<tools>` … `<tool_call>` JSON), i.e. the action space is INJECTED by the
+  caller. It drove arbigent's own actions natively out of the box — `perform_gohome`,
+  `perform_launchapp`, `perform_backpress` with all arbigent custom fields
+  (arbigent-memo / image-description / progress-state) correctly filled. No adapter needed.
+- Grounding (Pixel 8 baseline): **3/4 @ ~8.2s/call** on the M5 Pro (mlx 4bit).
+- Real-device smoke (Pixel 8, settings-battery): ❌ 14 steps, no success. Failure is
+  KNOWLEDGE, not protocol: it called `perform_launchapp` with app id `"settings"`
+  instead of the Android package name `com.android.settings`, the launch failed, and it
+  oscillated gohome ↔ launchapp ↔ backpress. An 8B model lacks the package-id knowledge
+  that flash-tier cloud models have.
+- **Verdict**: the most promising GUI-specialist we have tested — protocol-compatible AND
+  purpose-trained. But the 8B is too small for arbigent's knowledge-heavy prompt. Retest
+  when a 32B/235B checkpoint is published (README mentions those configs), or evaluate it
+  as a grounding sub-model in a hybrid setup (specialist points, cheap VLM decides).
+  Batched-action output (~40% of turns) is unused by arbigent's one-action-per-step loop —
+  a possible future speedup if we support multi-action decisions.
