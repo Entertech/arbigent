@@ -819,7 +819,7 @@ public data class KeyPressAgentAction(val keyName: String) : ArbigentAgentAction
   override fun runDeviceAction(runInput: ArbigentAgentAction.RunInput) {
     val code = resolveKeyCode(keyName)
       ?: throw MaestroException.InvalidCommand(
-        message = "Unknown key: $keyName. Supported keys: ${supportedKeyNames().joinToString(", ")}"
+        message = "Unknown key: $keyName. Supported keys (canonical names): ${supportedKeyNames().joinToString(", ")}"
       )
     runInput.device.executeActions(
       actions = listOf(
@@ -839,7 +839,6 @@ public data class KeyPressAgentAction(val keyName: String) : ArbigentAgentAction
     private val keyAliases: Map<String, KeyCode> = mapOf(
       "DEL" to KeyCode.BACKSPACE,
       "DELETE" to KeyCode.BACKSPACE,
-      "FORWARD_DEL" to KeyCode.BACKSPACE,
       "ESC" to KeyCode.ESCAPE,
       "DPAD_UP" to KeyCode.REMOTE_UP,
       "DPAD_DOWN" to KeyCode.REMOTE_DOWN,
@@ -850,7 +849,12 @@ public data class KeyPressAgentAction(val keyName: String) : ArbigentAgentAction
     )
 
     public fun resolveKeyCode(keyName: String): KeyCode? {
-      val normalized = keyName.trim().removePrefix("KEYCODE_")
+      val trimmed = keyName.trim()
+      val normalized = if (trimmed.startsWith("KEYCODE_", ignoreCase = true)) {
+        trimmed.substring("KEYCODE_".length)
+      } else {
+        trimmed
+      }
       return KeyCode.getByName(normalized)
         ?: KeyCode.entries.firstOrNull { it.name.equals(normalized.replace(' ', '_'), ignoreCase = true) }
         ?: keyAliases[normalized.replace(' ', '_').uppercase()]
