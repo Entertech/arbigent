@@ -46,6 +46,7 @@ public interface FileSystem {
 public class ArbigentProjectFileContent(
   @SerialName("scenarios")
   public val scenarioContents: List<ArbigentScenarioContent>,
+  public val reusableScenarios: List<ArbigentScenarioContent> = emptyList(),
   public val fixedScenarios: List<FixedScenario> = emptyList(),
   public val settings: ArbigentProjectSettings = ArbigentProjectSettings(),
 )
@@ -282,7 +283,14 @@ public data class ArbigentPrompt(
 
 @Serializable
 public data class CacheStrategy(
-  public val aiDecisionCacheStrategy: AiDecisionCacheStrategy = AiDecisionCacheStrategy.Disabled
+  public val aiDecisionCacheStrategy: AiDecisionCacheStrategy = AiDecisionCacheStrategy.Disabled,
+  /**
+   * Replay the actions a scenario recorded on its last successful run instead of asking the AI at
+   * each step. Project-wide only: replay is decided once for a whole run, so a per-scenario key
+   * would promise a granularity that does not exist. A scenario with no image assertions is run
+   * normally, since they are what verifies a replayed run.
+   */
+  public val replayWithFallback: Boolean = false,
 )
 
 @Serializable
@@ -306,6 +314,27 @@ public sealed interface AiDecisionCacheStrategy {
 
 }
 
+/**
+ * Resolves {{inputs.*}} inside Maestro YAML referenced from a reusable leaf's initialization
+ * methods, so the initializer can run the substituted flow (it prefers yamlContent when present).
+ */
+private fun resolveMaestroYamlInputs(
+  methods: List<ArbigentScenarioContent.InitializationMethod>,
+  inputBindings: Map<String, String>?,
+  fixedScenarios: List<FixedScenario>
+): List<ArbigentScenarioContent.InitializationMethod> {
+  if (inputBindings == null) return methods
+  return methods.map { method ->
+    if (method !is ArbigentScenarioContent.InitializationMethod.MaestroYaml) return@map method
+    val yamlText = fixedScenarios.firstOrNull { it.id == method.scenarioId }?.yamlText
+    if (yamlText != null && ReusableInputsResolver.containsInputPlaceholder(yamlText)) {
+      method.copy(yamlContent = ReusableInputsResolver.resolve(yamlText, inputBindings))
+    } else {
+      method
+    }
+  }
+}
+
 public fun List<ArbigentScenarioContent>.createArbigentScenario(
   projectSettings: ArbigentProjectSettings,
   scenario: ArbigentScenarioContent,
@@ -313,19 +342,16 @@ public fun List<ArbigentScenarioContent>.createArbigentScenario(
   deviceFactory: () -> ArbigentDevice,
   aiDecisionCache: ArbigentAiDecisionCache,
   appSettings: ArbigentAppSettings = DefaultArbigentAppSettings,
-  fixedScenarios: List<FixedScenario> = emptyList()
+  fixedScenarios: List<FixedScenario> = emptyList(),
+  reusableScenarios: List<ArbigentScenarioContent> = emptyList()
 ): ArbigentScenario {
-  val visited = mutableSetOf<ArbigentScenarioContent>()
-  val result = mutableListOf<ArbigentAgentTask>()
-  fun dfs(nodeScenario: ArbigentScenarioContent) {
-    if (visited.contains(nodeScenario)) {
-      return
-    }
-    visited.add(nodeScenario)
-    nodeScenario.dependencyId?.let { dependency ->
-      val dependencyScenario = first { it.id == dependency }
-      dfs(dependencyScenario)
-    }
+  fun agentTask(
+    taskScenarioId: String,
+    nodeScenario: ArbigentScenarioContent,
+    inputBindings: Map<String, String>?,
+    callBreadcrumb: String?,
+    callSiteAssertions: List<ArbigentImageAssertion> = emptyList()
+  ): ArbigentAgentTask {
     // Determine which device form factor to use
     val effectiveDeviceFormFactor = if (nodeScenario.deviceFormFactor is ArbigentScenarioDeviceFormFactor.Unspecified) {
       if (projectSettings.deviceFormFactor is ArbigentScenarioDeviceFormFactor.Unspecified) {
@@ -346,41 +372,87 @@ public fun List<ArbigentScenarioContent>.createArbigentScenario(
     // Merge additionalActions from project and scenario
     val mergedAdditionalActions = (projectSettings.additionalActions.orEmpty() + nodeScenario.additionalActions.orEmpty()).distinct()
 
-    result.add(
-      ArbigentAgentTask(
-        scenarioId = nodeScenario.id,
-        goal = nodeScenario.goal,
-        maxStep = nodeScenario.maxStep,
+    val goal = if (inputBindings != null) {
+      ReusableInputsResolver.resolve(nodeScenario.goal, inputBindings)
+    } else {
+      nodeScenario.goal
+    }
+    val initializationMethods = resolveMaestroYamlInputs(
+      methods = nodeScenario.initializationMethods.ifEmpty { listOf(nodeScenario.initializeMethods) },
+      inputBindings = inputBindings,
+      fixedScenarios = fixedScenarios
+    )
+
+    return ArbigentAgentTask(
+      scenarioId = taskScenarioId,
+      goal = goal,
+      maxStep = nodeScenario.maxStep,
+      deviceFormFactor = effectiveDeviceFormFactor,
+      additionalActions = mergedAdditionalActions,
+      mcpOptions = nodeScenario.mcpOptions,
+      callBreadcrumb = callBreadcrumb,
+      agentConfig = AgentConfigBuilder(
+        prompt = projectSettings.prompt,
+        scenarioType = nodeScenario.type,
         deviceFormFactor = effectiveDeviceFormFactor,
-        additionalActions = mergedAdditionalActions,
-        mcpOptions = nodeScenario.mcpOptions,
-        agentConfig = AgentConfigBuilder(
-          prompt = projectSettings.prompt,
-          scenarioType = nodeScenario.type,
-          deviceFormFactor = effectiveDeviceFormFactor,
-          initializationMethods = nodeScenario.initializationMethods.ifEmpty { listOf(nodeScenario.initializeMethods) },
-          imageAssertions = ArbigentImageAssertions(
-            nodeScenario.imageAssertions,
-            nodeScenario.imageAssertionHistoryCount
-          ),
-          aiDecisionCache = aiDecisionCache,
-          cacheOptions = nodeScenario.cacheOptions ?: ArbigentScenarioCacheOptions(),
-          mcpClient = if (projectSettings.mcpJson.isNotBlank() && projectSettings.mcpJson != DefaultMcpJson) {
-            MCPClient(projectSettings.mcpJson, appSettings)
-          } else {
-            null
-          },
-          fixedScenarios = fixedScenarios,
-          appSettings = appSettings
-        ).apply {
-          aiOptions(projectSettings.aiOptions?.mergeWith(nodeScenario.aiOptions) ?: nodeScenario.aiOptions)
-          aiFactory(aiFactory)
-          deviceFactory(deviceFactory)
-        }.build(),
-      )
+        initializationMethods = initializationMethods,
+        // Call-site assertions run after the leaf's own: the leaf verifies what it promised,
+        // then the call site verifies what this particular call was for. Only the leaf's own
+        // prompts are {{inputs.*}}-resolved — the call site declares no inputs.
+        imageAssertions = ArbigentImageAssertions(
+          nodeScenario.imageAssertions.map { assertion ->
+            if (inputBindings != null) {
+              assertion.copy(
+                assertionPrompt = ReusableInputsResolver.resolve(assertion.assertionPrompt, inputBindings)
+              )
+            } else {
+              assertion
+            }
+          } + callSiteAssertions,
+          nodeScenario.imageAssertionHistoryCount
+        ),
+        aiDecisionCache = aiDecisionCache,
+        cacheOptions = nodeScenario.cacheOptions ?: ArbigentScenarioCacheOptions(),
+        mcpClient = if (projectSettings.mcpJson.isNotBlank() && projectSettings.mcpJson != DefaultMcpJson) {
+          MCPClient(projectSettings.mcpJson, appSettings)
+        } else {
+          null
+        },
+        fixedScenarios = fixedScenarios,
+        appSettings = appSettings
+      ).apply {
+        aiOptions(projectSettings.aiOptions?.mergeWith(nodeScenario.aiOptions) ?: nodeScenario.aiOptions)
+        aiFactory(aiFactory)
+        deviceFactory(deviceFactory)
+      }.build(),
     )
   }
-  dfs(scenario)
+
+  val resolution = ArbigentScenarioResolver.resolveChain(
+    target = scenario,
+    // Both lookups resolve a duplicate id to the first declaration, as the runtime's
+    // `first { it.id == ... }` / `firstOrNull { it.id == step.uses }` always did.
+    scenarioLookup = { id -> firstOrNull { it.id == id } },
+    reusableLookup = { id -> reusableScenarios.firstOrNull { it.id == id } },
+  )
+  // Loading a project file already rejects every one of these, so reaching this point means the
+  // content was built in memory. Fail the same way rather than running a half-resolved chain.
+  resolution.diagnostics.firstOrNull()?.let {
+    throw ArbigentProjectValidationException(it.message)
+  }
+  val result = resolution.leaves.map { leaf ->
+    agentTask(
+      taskScenarioId = leaf.rootScenarioId,
+      // Non-null because the loop above throws for the only two diagnostics that produce a
+      // content-less leaf (UnresolvedReusable / CyclicReusable).
+      nodeScenario = requireNotNull(leaf.content) {
+        "Unresolved leaf '${leaf.uses}' reached task creation without a diagnostic"
+      },
+      inputBindings = leaf.bindings,
+      callBreadcrumb = leaf.callPath.takeIf { it.isNotEmpty() }?.joinToString(" › "),
+      callSiteAssertions = leaf.callSiteAssertions,
+    )
+  }
   arbigentDebugLog("Built scenario ${scenario.id} with ${result.size} tasks: ${result.map { it.scenarioId }}")
   // Determine which device form factor to use for the scenario
   val effectiveScenarioDeviceFormFactor = if (scenario.deviceFormFactor is ArbigentScenarioDeviceFormFactor.Unspecified) {
@@ -399,10 +471,30 @@ public fun List<ArbigentScenarioContent>.createArbigentScenario(
     scenario.deviceFormFactor
   }
 
+  // Replay is verified by the image assertions and by nothing else. Looking at the scenario's own
+  // imageAssertions is not enough: a call-form scenario carries none of its own, and what verifies
+  // it lives on the last leaf of the expansion — that leaf's assertions plus any declared at the
+  // call site. A project-wide default that does not apply to a scenario is ordinary, so this
+  // reports rather than rejects.
+  val verifyingAssertions = resolution.leaves.lastOrNull()
+    ?.let { leaf -> leaf.content?.imageAssertions.orEmpty() + leaf.callSiteAssertions }
+    .orEmpty()
+  val replayWithFallback = if (!projectSettings.cacheStrategy.replayWithFallback) {
+    false
+  } else if (verifyingAssertions.isEmpty()) {
+    arbigentInfoLog(
+      "Not replaying scenario '${scenario.id}': it has no imageAssertions to verify a replayed run",
+    )
+    false
+  } else {
+    true
+  }
+
   return ArbigentScenario(
     id = scenario.id,
     agentTasks = result,
     maxRetry = scenario.maxRetry,
+    replayWithFallback = replayWithFallback,
     maxStepCount = scenario.maxStep,
     tags = scenario.tags,
     deviceFormFactor = effectiveScenarioDeviceFormFactor,
@@ -430,10 +522,17 @@ public sealed interface ArbigentScenarioType {
 public class ArbigentScenarioContent @OptIn(ExperimentalUuidApi::class) constructor(
   public val id: String = Uuid.random().toString(),
   @YamlMultiLineStringStyle(MultiLineStringStyle.Literal)
-  public val goal: String,
+  public val goal: String = "",
   public val type: ArbigentScenarioType = ArbigentScenarioType.Scenario,
   @SerialName("dependency")
   public val dependencyId: String? = null,
+  // Call form: reference a reusable scenario by id ("uses" is sugar for a single-entry "steps").
+  public val uses: String? = null,
+  @SerialName("with")
+  public val withValues: Map<String, String> = emptyMap(),
+  public val steps: List<ReusableStep> = emptyList(),
+  // Input declarations. Only allowed on reusableScenarios entries.
+  public val inputs: Map<String, ReusableInput> = emptyMap(),
   public val initializationMethods: List<InitializationMethod> = listOf(),
   @Deprecated("use initializationMethods")
   public val initializeMethods: InitializationMethod = InitializationMethod.Noop,
@@ -453,6 +552,27 @@ public class ArbigentScenarioContent @OptIn(ExperimentalUuidApi::class) construc
   public val additionalActions: List<String>? = null,
   public val mcpOptions: ArbigentMcpOptions? = null
 ) {
+  /** True when this scenario is a call to reusable scenarios instead of a goal-based leaf. */
+  public fun isCallForm(): Boolean = uses != null || steps.isNotEmpty()
+
+  /** Normalized call steps: `uses` is sugar for a single-entry `steps` list. */
+  public fun callSteps(): List<ReusableStep> =
+    if (uses != null) listOf(ReusableStep(uses = uses, withValues = withValues)) + steps
+    else steps
+
+  @Serializable
+  public data class ReusableStep(
+    public val uses: String,
+    @SerialName("with")
+    public val withValues: Map<String, String> = emptyMap(),
+  )
+
+  @Serializable
+  public data class ReusableInput(
+    public val required: Boolean = false,
+    public val default: String? = null,
+  )
+
   @Serializable
   public sealed interface CleanupData {
     @Serializable
@@ -560,12 +680,14 @@ public class ArbigentProjectSerializer(
 
   internal fun load(yamlString: String): ArbigentProjectFileContent {
     return yaml.decodeFromString(ArbigentProjectFileContent.serializer(), yamlString)
+      .also { it.validateProject() }
   }
 
   private fun load(inputStream: InputStream): ArbigentProjectFileContent {
     val jsonString = fileSystem.readText(inputStream)
     val projectFileContent =
       yaml.decodeFromString(ArbigentProjectFileContent.serializer(), jsonString)
+    projectFileContent.validateProject()
     return projectFileContent
   }
 

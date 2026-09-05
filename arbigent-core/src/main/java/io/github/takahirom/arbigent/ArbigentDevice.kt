@@ -9,8 +9,9 @@ import maestro.UiElement.Companion.toUiElement
 import maestro.UiElement.Companion.toUiElementOrNull
 import maestro.orchestra.MaestroCommand
 import maestro.orchestra.Orchestra
-import java.io.File
 import okio.sink
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.pow
 import kotlin.system.measureTimeMillis
 
@@ -205,22 +206,42 @@ public data class ArbigentElementList(
 }
 
 public class MaestroDevice(
-  @Volatile private var maestro: Maestro,
+  maestro: Maestro,
   private val screenshotsDir: File = ArbigentFiles.screenshotsDir,
   private val availableDevice: ArbigentAvailableDevice? = null,
-  private val closeHook: (() -> Unit)? = null,
+  // Extra teardown tied to this connection (e.g. the iproxy port forwarder for a physical
+  // iPhone), run after maestro.close() so session-scoped child processes stop with the device.
+  onClose: (() -> Unit)? = null,
 ) : ArbigentDevice, ArbigentTvCompatDevice {
+  // maestro, its Orchestra and the connection-scoped teardown are swapped together as one
+  // Connection, so a reconnect can never pair the new maestro with the old cleanup (which would
+  // leak the replacement device's iproxy) or keep invoking the stale one on close().
+  //
+  // Maestro's Orchestra artifact refactor (#3282) removed the screenshotsDir constructor
+  // parameter; takeScreenshot commands now write under an artifacts dir instead of
+  // screenshotsDir/<path>.png. Arbigent captures screenshots itself in executeActions()
+  // (see below) to keep that path contract, so Orchestra needs no screenshots dir here.
+  private class Connection(
+    val maestro: Maestro,
+    val orchestra: Orchestra,
+    val onClose: (() -> Unit)?,
+  ) {
+    // Teardown runs at most once per Connection: a failed reconnect closes the broken connection up
+    // front and then a later close() would otherwise close the same object again (double maestro.close
+    // + double onClose, freeing a port a newer connection may already own).
+    val closed = AtomicBoolean(false)
+  }
+
+  @Volatile private var connection: Connection =
+    Connection(maestro, Orchestra(maestro = maestro), onClose)
+
+  // Volatile read of the live connection so callers keep using `maestro`/`orchestra` unchanged.
+  private val maestro: Maestro get() = connection.maestro
+  private val orchestra: Orchestra get() = connection.orchestra
+
   init {
     arbigentInfoLog("MaestroDevice created: screenshotsDir:${screenshotsDir.absolutePath}")
   }
-
-  // Maestro's Orchestra artifact refactor (#3282) removed screenshotsDir; takeScreenshot
-  // now writes under artifactsDir/takeScreenshot/. Arbigent instead captures screenshots
-  // itself in executeActions() to keep the screenshotsDir/<stepId>.png path contract, so
-  // Orchestra needs no artifactsDir here.
-  @Volatile private var orchestra = Orchestra(
-    maestro = maestro,
-  )
 
   // Per-screen cache of the view hierarchy. Fetching it from the device (XCTest
   // on iOS, UIAutomator on Android) is the dominant non-model cost, and the agent
@@ -296,17 +317,18 @@ public class MaestroDevice(
 
   override fun executeActions(actions: List<MaestroCommand>) {
     ensureConnected()
-    // A lone takeScreenshot (how arbigent always issues it) is captured directly to
-    // screenshotsDir/<path>.png. Maestro's Orchestra artifact refactor (#3282) moved
-    // takeScreenshot outputs under artifactsDir/takeScreenshot/, which no longer matches
-    // where arbigent reads them (screenshotsDir/<stepId>.png), so we bypass Orchestra for
-    // screenshots and keep the path contract. All other commands still run via Orchestra.
+    // A lone takeScreenshot (how arbigent always issues one, see ArbigentAgent) is captured
+    // directly to screenshotsDir/<path>.png. Maestro's Orchestra artifact refactor (#3282)
+    // moved takeScreenshot output under an artifacts dir, which no longer matches where
+    // arbigent reads the file, so screenshots bypass Orchestra to keep the path contract.
+    // Every other command still runs through Orchestra via runFlow (which manages the JS
+    // engine lifecycle internally, replacing the old shouldReinitJsEngine reflection).
     val screenshot = actions.singleOrNull()?.takeScreenshotCommand
     ArbigentGlobalStatus.onDevice(actions.joinToString { it.toString() }) {
       val ms = measureTimeMillis {
         runBlocking {
           if (screenshot != null) {
-            val file = File(screenshotsDir, "${screenshot.path}.png").apply { parentFile?.mkdirs() }
+            val file = resolveScreenshotFile(screenshotsDir, screenshot.path)
             maestro.takeScreenshot(file.sink(), false)
           } else {
             orchestra.runFlow(actions)
@@ -686,15 +708,31 @@ public class MaestroDevice(
     }
   }
 
-  private var isClosed = false
+  @Volatile private var isClosed = false
+  // Set once a full reconnect sequence has exhausted every attempt: the current connection is torn
+  // down and no replacement was installed, so the device is unusable. Further operations fail fast
+  // with a clear error instead of endlessly re-tearing-down the already-closed connection.
+  @Volatile private var connectionLost = false
   private var reconnectAttempts = 0
   private val maxReconnectAttempts = 6  // Allows retries with exponential backoff up to ~64 seconds
+  // Guards the connection swap in reconnect against close(): whoever holds it either replaces the
+  // connection or tears it down, never both at once, so close() can't capture the old connection
+  // while reconnect installs a new one (which would leak the replacement's iproxy forwarder).
   private val reconnectLock = Any()
-  
-  private fun updateConnection(newMaestro: Maestro) {
-    this.maestro = newMaestro
-    this.cachedHierarchy = null
-    this.orchestra = Orchestra(maestro = this.maestro)
+
+  // Close a connection exactly once: shut down maestro, then always run its onClose (which stops
+  // and de-registers the iproxy forwarder) even if maestro.close() throws, so the forwarder and
+  // its port are released rather than leaked. The compareAndSet guard makes this idempotent per
+  // Connection so a close() after a failed reconnect (which already tore this connection down)
+  // never double-closes maestro or double-runs onClose.
+  private fun closeConnection(target: Connection) {
+    if (!target.closed.compareAndSet(false, true)) return
+    try {
+      target.maestro.close()
+    } catch (_: Exception) {
+      // Ignore close errors, device might already be disconnected
+    }
+    runCatching { target.onClose?.invoke() }
   }
 
   private fun reconnectIfDisconnected() {
@@ -703,9 +741,23 @@ public class MaestroDevice(
       if (availableDevice == null) {
         throw IllegalStateException("Cannot reconnect: no available device reference")
       }
+      if (isClosed) {
+        throw IllegalStateException("Cannot reconnect: device is closed")
+      }
+      if (connectionLost) {
+        throw IllegalStateException("Device connection lost: reconnection already failed permanently")
+      }
+
+      // Tear down the current (broken) connection up front — closing its maestro and running its
+      // onClose, which stops the iproxy forwarder and frees the port — BEFORE building the
+      // replacement. Building first would start a second forwarder on the same port, and the
+      // ownership check would reject it because this very JVM still owns the port, so reconnect
+      // could never succeed. Readers are serialized behind ensureConnected()'s monitor, so no one
+      // observes the closed connection during the swap; a transient failure that retries is fine.
+      closeConnection(this.connection)
 
       var lastException: Exception? = null
-      
+
       // Retry with exponential backoff
       while (reconnectAttempts < maxReconnectAttempts) {
         // Exponential backoff: 2^attempt seconds (2s, 4s, 8s, 16s, 32s, 64s...)
@@ -723,10 +775,8 @@ public class MaestroDevice(
           arbigentInfoLog("Waiting ${actualWaitTimeMs}ms before reconnection attempt ${reconnectAttempts + 1}")
           Thread.sleep(actualWaitTimeMs)
         }
-        
+
         reconnectAttempts++
-        
-        val oldMaestro = this.maestro
 
         // Try to reconnect
         val newDevice = try {
@@ -743,33 +793,34 @@ public class MaestroDevice(
           continue // Try again
         }
 
-        // Update to new connection
-        updateConnection(newDevice.maestro)
-
-        // Close old connection after successful reconnection
-        try {
-          oldMaestro.close()
-        } catch (_: Exception) {
-          // Ignore close errors, device might already be disconnected
-        }
+        // Adopt the new device's whole Connection (maestro + orchestra + its onClose, which owns the
+        // new iproxy) in one volatile swap. The old connection was already torn down above.
+        this.connection = newDevice.connection
+        // The new session has no screen state in common with the old one.
+        this.cachedHierarchy = null
+        this.foregroundHintCache = null
 
         // Reset counter on successful reconnection
         reconnectAttempts = 0
         return // Success!
       }
-      
-      // All attempts failed - reset counter for future retry sequences
+
+      // All attempts failed. The broken connection was already torn down above and no replacement
+      // was installed, so mark the device permanently lost: further operations throw the clear
+      // "connection lost" error rather than re-closing the dead connection.
       reconnectAttempts = 0
+      connectionLost = true
       throw RuntimeException("Failed to reconnect after $maxReconnectAttempts attempts", lastException)
     }
   }
 
   override fun close() {
-    isClosed = true
-    try {
-      maestro.close()
-    } finally {
-      closeHook?.invoke()
+    // Same lock as reconnect so a close racing an in-progress reconnect tears down whichever
+    // connection reconnect ultimately installs, instead of capturing the old one and leaking the
+    // replacement's forwarder.
+    synchronized(reconnectLock) {
+      isClosed = true
+      closeConnection(connection)
     }
   }
 
@@ -1040,4 +1091,25 @@ public fun TreeNode.optimizeTree(
 private fun TreeNode.getIdentifierDataForFocus(): List<Any> {
   val sortedAttributes = (attributes - "bounds" - "focused" - "selected").toSortedMap()
   return listOf(sortedAttributes) + children.map { it.getIdentifierDataForFocus() }
+}
+
+// takeScreenshot paths come from user-authored flows, so they must not escape screenshotsDir.
+// Reject absolute or parent-traversing paths lexically, then canonicalize (without creating any
+// directories) so a symlinked component that escapes the base is resolved and caught before we
+// create the parent directory.
+internal fun resolveScreenshotFile(screenshotsDir: File, path: String): File {
+  val base = screenshotsDir.canonicalFile
+  val requested = File("$path.png")
+  require(!requested.isAbsolute) {
+    "Screenshot path must be relative to the screenshots directory: $path"
+  }
+  require(requested.invariantSeparatorsPath.split('/').none { it == ".." }) {
+    "Screenshot path must not traverse outside the screenshots directory: $path"
+  }
+  val canonical = File(base, requested.path).canonicalFile
+  require(canonical.toPath().startsWith(base.toPath())) {
+    "Screenshot path escapes the screenshots directory: $path"
+  }
+  canonical.parentFile?.mkdirs()
+  return canonical
 }

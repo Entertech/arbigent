@@ -62,6 +62,8 @@ internal fun LeftScenariosPanel(
 ) {
   // Map to manage expanded/collapsed state (scenario holder -> expanded state)
   val expandedStates = remember { mutableStateMapOf<ArbigentScenarioStateHolder, Boolean>() }
+  var isSearchVisible by remember { mutableStateOf(false) }
+  val searchTextState = rememberTextFieldState()
   Column(
     Modifier
       .run {
@@ -88,15 +90,50 @@ internal fun LeftScenariosPanel(
       }
 
       IconActionButton(
+        key = AllIconsKeys.Graph.Layout,
+        onClick = {
+          appStateHolder.projectDialogState.value = ProjectDialogState.ShowScenarioGraphDialog
+        },
+        contentDescription = "Scenario graph",
+        hint = Size(28),
+        modifier = Modifier.padding(end = 8.dp).testTag("scenario_graph_button")
+      ) {
+        Text("Scenario graph")
+      }
+
+      IconActionButton(
         key = AllIconsKeys.Diff.MagicResolve,
         onClick = {
           appStateHolder.projectDialogState.value = ProjectDialogState.ShowGenerateScenarioDialog
         },
         contentDescription = "Generate",
-        hint = Size(28)
+        hint = Size(28),
+        modifier = Modifier.padding(end = 8.dp)
       ) {
         Text("Generate scenario")
       }
+
+      IconActionButton(
+        key = AllIconsKeys.Actions.Find,
+        onClick = {
+          isSearchVisible = !isSearchVisible
+        },
+        contentDescription = "Search",
+        hint = Size(28),
+        modifier = Modifier.testTag("scenario_search_button")
+      ) {
+        Text("Search scenarios")
+      }
+    }
+    if (isSearchVisible) {
+      TextField(
+        state = searchTextState,
+        placeholder = { Text("Search by goal or note") },
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
+          .testTag("scenario_search_field")
+      )
     }
     Box {
       if (scenarioAndDepths.isNotEmpty()) {
@@ -115,9 +152,10 @@ internal fun LeftScenariosPanel(
       // Pre-compute visibility using derivedStateOf to avoid recomputation on unrelated recompositions
       val visibleIndices by remember(scenarioAndDepths, expandedStates) {
         derivedStateOf {
+          val query = if (isSearchVisible) searchTextState.text.toString().trim() else ""
           val indices = mutableSetOf<Int>()
           val ancestorStack = mutableListOf<Pair<Int, ArbigentScenarioStateHolder>>()
-          
+
           scenarioAndDepths.forEachIndexed { index, (scenarioHolder, depth) ->
             // Pop ancestors that are at same or deeper level
             while (ancestorStack.isNotEmpty()) {
@@ -128,16 +166,27 @@ internal fun LeftScenariosPanel(
                 break
               }
             }
-            
-            // Check if all ancestors are expanded
-            val allAncestorsExpanded = ancestorStack.all { (_, ancestorHolder) ->
-              expandedStates.getOrDefault(ancestorHolder, true)
+
+            if (query.isNotEmpty()) {
+              // While searching, show matches (by goal or note) and their ancestors,
+              // ignoring the collapsed state so matches are never hidden
+              val matches = scenarioHolder.goalState.text.contains(query, ignoreCase = true) ||
+                scenarioHolder.noteForHumans.text.contains(query, ignoreCase = true)
+              if (matches) {
+                indices.add(index)
+                ancestorStack.forEach { (ancestorIndex, _) -> indices.add(ancestorIndex) }
+              }
+            } else {
+              // Check if all ancestors are expanded
+              val allAncestorsExpanded = ancestorStack.all { (_, ancestorHolder) ->
+                expandedStates.getOrDefault(ancestorHolder, true)
+              }
+
+              if (allAncestorsExpanded) {
+                indices.add(index)
+              }
             }
-            
-            if (allAncestorsExpanded) {
-              indices.add(index)
-            }
-            
+
             // Add current item to ancestor stack for its potential children
             ancestorStack.add(index to scenarioHolder)
           }
@@ -196,9 +245,17 @@ internal fun LeftScenariosPanel(
               
               val runningInfo by scenarioStateHolder.arbigentScenarioRunningInfo.collectAsState()
               val scenarioType by scenarioStateHolder.scenarioTypeStateFlow.collectAsState()
+              val reusableStepsMode by scenarioStateHolder.reusableStepsModeStateFlow.collectAsState()
+              val reusableSteps by scenarioStateHolder.reusableStepsStateFlow.collectAsState()
               Text(
                 modifier = Modifier.weight(1f),
-                text = if (scenarioType.isScenario()) {
+                text = if (reusableStepsMode) {
+                  "↻ " + reusableSteps.joinToString(" -> ") { step ->
+                    step.uses.ifBlank { "?" } +
+                      if (step.withValues.isEmpty()) ""
+                      else " (" + step.withValues.entries.joinToString(", ") { "${it.key}=${it.value}" } + ")"
+                  }
+                } else if (scenarioType.isScenario()) {
                   "Goal: $goal"
                 } else {
                   val scenarioId by scenarioStateHolder.idStateFlow.collectAsState()

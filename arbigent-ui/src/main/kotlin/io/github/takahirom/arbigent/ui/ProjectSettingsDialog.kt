@@ -27,6 +27,7 @@ import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.painter.hints.Size
 import org.jetbrains.jewel.ui.component.ActionButton
 import org.jetbrains.jewel.ui.component.Dropdown
+import org.jetbrains.jewel.ui.component.CheckboxRow
 import org.jetbrains.jewel.ui.component.GroupHeader
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.TextField
@@ -246,6 +247,17 @@ fun ProjectSettingsDialog(appStateHolder: ArbigentAppStateHolder, onCloseRequest
               }
             )
           }
+
+          GroupHeader("Replay with fallback")
+          CheckboxRow(
+            modifier = Modifier.padding(start = 16.dp),
+            text = "Replay recorded actions first (scenarios with no image assertions run normally)",
+            checked = cacheStrategy.replayWithFallback,
+            onCheckedChange = { enabled ->
+              appStateHolder.cacheStrategyFlow.value =
+                appStateHolder.cacheStrategyFlow.value.copy(replayWithFallback = enabled)
+            },
+          )
 
           GroupHeader("MCP JSON Configuration")
           val mcpJson: TextFieldState = remember {

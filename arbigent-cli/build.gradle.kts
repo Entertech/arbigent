@@ -95,11 +95,12 @@ tasks.test {
 
 dependencies {
   implementation("com.github.ajalt.clikt:clikt:5.0.2")
-  implementation("com.jakewharton.mosaic:mosaic-runtime:0.17.0")
+  implementation("com.jakewharton.mosaic:mosaic-runtime:0.18.0")
   implementation("com.charleskorn.kaml:kaml:0.83.0")
   implementation(libs.kotlinx.serialization.json)
   implementation(project(":arbigent-core"))
   implementation(project(":arbigent-ai-openai"))
+  implementation(project(":arbigent-ai-anthropic"))
   testImplementation(kotlin("test"))
 
   // coroutine test

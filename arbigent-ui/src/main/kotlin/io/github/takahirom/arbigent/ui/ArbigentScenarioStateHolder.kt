@@ -4,6 +4,7 @@ import androidx.compose.foundation.text.input.TextFieldState
 import io.github.takahirom.arbigent.*
 import io.github.takahirom.arbigent.coroutines.buildSingleSourceStateFlow
 import io.github.takahirom.arbigent.result.ArbigentScenarioDeviceFormFactor
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,10 @@ class ArbigentScenarioStateHolder
 @OptIn(ExperimentalUuidApi::class)
 constructor(
   id: String = Uuid.random().toString(),
-  private val tagManager: ArbigentTagManager
+  private val tagManager: ArbigentTagManager,
+  // Required: the flow scope's dispatcher, supplied by whoever creates this holder (ultimately the
+  // UI composition root) so no construction path silently falls back to a default.
+  dispatcher: CoroutineDispatcher,
 ) {
   private val _id = MutableStateFlow(id)
   val idStateFlow: StateFlow<String> = _id
@@ -62,12 +66,21 @@ constructor(
     MutableStateFlow(ArbigentScenarioType.Scenario)
   fun scenarioType() = scenarioTypeStateFlow.value
 
+  // Call form ("Reusable steps"): the scenario calls reusable scenarios instead of having a goal.
+  val reusableStepsModeStateFlow: MutableStateFlow<Boolean> = MutableStateFlow(false)
+  val reusableStepsStateFlow: MutableStateFlow<List<ArbigentScenarioContent.ReusableStep>> =
+    MutableStateFlow(emptyList())
+
+  // Input declarations. Only used when this holder edits a reusableScenarios entry.
+  val reusableInputsStateFlow: MutableStateFlow<List<Pair<String, ArbigentScenarioContent.ReusableInput>>> =
+    MutableStateFlow(emptyList())
+
   val dependencyScenarioStateHolderStateFlow = MutableStateFlow<ArbigentScenarioStateHolder?>(null)
   val arbigentScenarioExecutorStateFlow = MutableStateFlow<ArbigentScenarioExecutor?>(null)
   val isNewlyGenerated = MutableStateFlow(false)
 
   private val coroutineScope = CoroutineScope(
-    ArbigentCoroutinesDispatcher.dispatcher + SupervisorJob()
+    dispatcher + SupervisorJob()
   )
   @OptIn(ArbigentInternalApi::class)
   val tags = coroutineScope.buildSingleSourceStateFlow(tagManager.scenarioToTagsStateFlow) {
@@ -160,8 +173,13 @@ constructor(
   }
 
   fun onOverrideCacheForceDisabledChanged(disabled: Boolean?) {
-    _cacheOptions.value = if (disabled == null) null else ArbigentScenarioCacheOptions(disabled)
+    _cacheOptions.value = if (disabled == null) {
+      null
+    } else {
+      (_cacheOptions.value ?: ArbigentScenarioCacheOptions()).copy(forceCacheDisabled = disabled)
+    }
   }
+
 
   fun onAdditionalActionsChanged(actions: List<String>?) {
     _additionalActions.value = actions
@@ -171,7 +189,77 @@ constructor(
     _mcpOptions.value = options
   }
 
+  fun onReusableStepsModeChanged(enabled: Boolean) {
+    reusableStepsModeStateFlow.value = enabled
+    if (enabled && reusableStepsStateFlow.value.isEmpty()) {
+      // Show one unselected step row so the Browse button is visible right away.
+      reusableStepsStateFlow.value = listOf(ArbigentScenarioContent.ReusableStep(uses = ""))
+    }
+  }
+
+  fun onAddReusableStep() {
+    reusableStepsStateFlow.value += ArbigentScenarioContent.ReusableStep(uses = "")
+  }
+
+  fun onReusableStepChanged(index: Int, step: ArbigentScenarioContent.ReusableStep) {
+    reusableStepsStateFlow.value = reusableStepsStateFlow.value.toMutableList().apply {
+      set(index, step)
+    }
+  }
+
+  fun onRemoveReusableStep(index: Int) {
+    reusableStepsStateFlow.value = reusableStepsStateFlow.value.toMutableList().apply {
+      removeAt(index)
+    }
+  }
+
+  fun onAddReusableInput() {
+    reusableInputsStateFlow.value += ("" to ArbigentScenarioContent.ReusableInput())
+  }
+
+  fun onReusableInputChanged(index: Int, name: String, input: ArbigentScenarioContent.ReusableInput) {
+    reusableInputsStateFlow.value = reusableInputsStateFlow.value.toMutableList().apply {
+      set(index, name to input)
+    }
+  }
+
+  fun onRemoveReusableInput(index: Int) {
+    reusableInputsStateFlow.value = reusableInputsStateFlow.value.toMutableList().apply {
+      removeAt(index)
+    }
+  }
+
+  /** Turn this scenario into a call node that uses [reusableId] (Make this reusable). */
+  fun convertToCallNode(reusableId: String) {
+    reusableStepsModeStateFlow.value = true
+    reusableStepsStateFlow.value = listOf(ArbigentScenarioContent.ReusableStep(uses = reusableId))
+    onGoalChanged("")
+    _initializationMethodStateFlow.value = emptyList()
+    imageAssertionsStateFlow.value = emptyList()
+    scenarioTypeStateFlow.value = ArbigentScenarioType.Scenario
+    _aiOptions.value = null
+    _cacheOptions.value = null
+    _additionalActions.value = null
+    _mcpOptions.value = null
+  }
+
   fun createArbigentScenarioContent(): ArbigentScenarioContent {
+    if (reusableStepsModeStateFlow.value) {
+      val steps = reusableStepsStateFlow.value.filter { it.uses.isNotBlank() }
+      return ArbigentScenarioContent(
+        id = id,
+        goal = "",
+        dependencyId = dependencyScenarioStateHolderStateFlow.value?.id,
+        uses = steps.singleOrNull()?.uses,
+        withValues = steps.singleOrNull()?.withValues ?: emptyMap(),
+        steps = if (steps.size == 1) emptyList() else steps,
+        noteForHumans = noteForHumans.text.toString(),
+        maxRetry = maxRetryState.text.toString().toIntOrNull() ?: 3,
+        tags = tagManager.tagsForScenario(this),
+        deviceFormFactor = deviceFormFactorStateFlow.value,
+        inputs = reusableInputsStateFlow.value.filter { it.first.isNotBlank() }.toMap(),
+      )
+    }
     return ArbigentScenarioContent(
       id = id,
       goal = goal,
@@ -193,12 +281,16 @@ constructor(
       aiOptions = aiOptionsFlow.value,
       cacheOptions = cacheOptionsFlow.value,
       additionalActions = additionalActionsFlow.value,
-      mcpOptions = mcpOptionsFlow.value
+      mcpOptions = mcpOptionsFlow.value,
+      inputs = reusableInputsStateFlow.value.filter { it.first.isNotBlank() }.toMap(),
     )
   }
 
   fun load(scenarioContent: ArbigentScenarioContent) {
     _id.value = scenarioContent.id
+    reusableStepsModeStateFlow.value = scenarioContent.isCallForm()
+    reusableStepsStateFlow.value = scenarioContent.callSteps()
+    reusableInputsStateFlow.value = scenarioContent.inputs.toList()
     onGoalChanged(scenarioContent.goal)
     maxRetryState.edit {
       replace(0, length, scenarioContent.maxRetry.toString())

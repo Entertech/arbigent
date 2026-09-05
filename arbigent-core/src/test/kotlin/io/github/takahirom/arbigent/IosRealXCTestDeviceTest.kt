@@ -68,21 +68,6 @@ class IosRealXCTestDeviceTest {
   }
 
   @Test
-  fun `parseTeamIds extracts unique Apple Team IDs`() {
-    val output = """
-        1) CF5CB1CD7C2C87E64364885372866FA2DA362C41 "Apple Development: Example (C29C23WKU8)"
-        2) 02DA0804B5496F479BF5B4F7E3BCF296E675CC0D "Apple Distribution: Looktech Inc. (B6Y9D6S4KK)"
-        3) 5FD3E2C08922871A4CB0E984BD2A4950C9E31F43 "Apple Development: Example (C29C23WKU8)"
-           3 valid identities found
-    """.trimIndent()
-
-    assertEquals(
-      setOf("C29C23WKU8", "B6Y9D6S4KK"),
-      IosCodeSigningTeamResolver.parseTeamIds(output),
-    )
-  }
-
-  @Test
   fun `fromEnvironment reads persisted host settings`() {
     ArbigentHostConfig.replace(
       mapOf(

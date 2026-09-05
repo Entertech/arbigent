@@ -11,6 +11,7 @@ import io.github.takahirom.arbigent.result.ArbigentAgentResult
 import io.github.takahirom.arbigent.result.ArbigentAgentTaskStepResult
 import io.github.takahirom.arbigent.result.ArbigentProjectExecutionResult
 import io.github.takahirom.arbigent.result.ArbigentScenarioResult
+import io.github.takahirom.arbigent.result.ArbigentStepSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
@@ -194,7 +195,9 @@ private fun ArbigentProjectExecutionResult.executionDiagnostics(): ExecutionDiag
     }
   }
   return ExecutionDiagnostics(
-    decisionCacheHits = steps.count { it.cacheHit },
+    // Upstream replaced the cacheHit flag with a step source; both the UI-tree cache and a
+    // replayed trace are "no model call" rungs, which is what this counter measures.
+    decisionCacheHits = steps.count { it.stepSource != ArbigentStepSource.Ai },
     codex = codex,
     nonModelDurationMs = nonModelDurationMs,
   )

@@ -1,7 +1,6 @@
 package io.github.takahirom.arbigent.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
@@ -31,7 +30,6 @@ import org.jetbrains.jewel.ui.component.*
 import org.jetbrains.jewel.ui.theme.colorPalette
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.painter.hints.Size
-import org.jetbrains.jewel.ui.theme.simpleListItemStyle
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -116,20 +114,16 @@ fun AiOptionsComponent(
                 Column {
                     ImageDetailLevel.entries.forEach { item ->
                         val isSelected = item == detail
-                        val isItemHovered = false
-                        val isPreviewSelection = false
-                        SimpleListItem(
+                        ComboBoxItem(
                             text = item.name.lowercase(),
-                            state = ListItemState(isSelected, isItemHovered, isPreviewSelection),
+                            isSelected = isSelected,
+                            onClick = {
+                                updatedOptionsChanged(
+                                    updatedOptions.copy(imageDetail = item)
+                                )
+                            },
                             modifier = Modifier
                                 .testTag("image_detail_level_item_${item.name.lowercase()}")
-                                .clickable {
-                                    updatedOptionsChanged(
-                                        updatedOptions.copy(imageDetail = item)
-                                    )
-                                },
-                            style = JewelTheme.simpleListItemStyle,
-                            contentDescription = item.name.lowercase()
                         )
                     }
                 }
@@ -168,20 +162,16 @@ fun AiOptionsComponent(
                 Column {
                     listOf(ImageFormat.PNG, ImageFormat.WEBP, ImageFormat.LOSSY_WEBP).forEach { item ->
                         val isSelected = item == updatedOptions.imageFormat
-                        val isItemHovered = false
-                        val isPreviewSelection = false
-                        SimpleListItem(
+                        ComboBoxItem(
                             text = item.name.lowercase().replace("_", " "),
-                            state = ListItemState(isSelected, isItemHovered, isPreviewSelection),
+                            isSelected = isSelected,
+                            onClick = {
+                                updatedOptionsChanged(
+                                    updatedOptions.copy(imageFormat = item)
+                                )
+                            },
                             modifier = Modifier
                                 .testTag("image_format_item_${item.name.lowercase()}")
-                                .clickable {
-                                    updatedOptionsChanged(
-                                        updatedOptions.copy(imageFormat = item)
-                                    )
-                                },
-                            style = JewelTheme.simpleListItemStyle,
-                            contentDescription = item.name.lowercase().replace("_", " ")
                         )
                     }
                 }
@@ -291,7 +281,7 @@ fun AiOptionsComponent(
                 contentDescription = "Extra Request Params Info",
                 hint = Size(16)
             ) {
-                Text("Add custom JSON fields to the API request body. For example: {\"reasoning_effort\": \"high\"} for OpenAI o3/5.1 models.")
+                Text("Add custom JSON fields to the API request body. For example: {\"reasoning_effort\": \"high\"} for OpenAI o3/5.1 models, or {\"thinking\": {\"type\": \"enabled\", \"budget_tokens\": 10000}} for Anthropic extended thinking (increase max_tokens above the budget too).")
             }
         }
         var jsonParseError by remember { mutableStateOf<String?>(null) }

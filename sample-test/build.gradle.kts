@@ -16,8 +16,9 @@ tasks.withType<Test> {
 dependencies {
     implementation(project(":arbigent-core"))
     implementation(project(":arbigent-ai-openai"))
-    // maestro client
+    // maestro client (fork: Maven Central ai.looktech coordinates, see gradle/libs.versions.toml)
     api(libs.maestro.client)
+    api(libs.maestro.orchestra)
     testImplementation(kotlin("test"))
     // coroutine test
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.5.2")

@@ -19,6 +19,7 @@ import io.github.takahirom.robospec.DescribedBehaviors
 import io.github.takahirom.robospec.describeBehaviors
 import io.github.takahirom.robospec.execute
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -36,7 +37,6 @@ class UiTests(private val behavior: DescribedBehavior<TestRobot>) {
   @Test
   fun test() {
     val testDispatcher = StandardTestDispatcher()
-    ArbigentCoroutinesDispatcher.dispatcher = testDispatcher
     globalKeyStoreFactory = TestKeyStoreFactory()
     // Use fixed timestamp for deterministic UI tests
     TimeProvider.set(TestTimeProvider(1234567890000L))
@@ -89,6 +89,23 @@ class UiTests(private val behavior: DescribedBehavior<TestRobot>) {
                 capture(it)
               }
             }
+          }
+        }
+
+        describe("when search scenarios") {
+          doIt {
+            clickConnectToDeviceButton()
+            clickAddScenarioButton()
+            enterGoal("Login with valid account")
+            clickAddScenarioButton()
+            enterGoal("Open settings screen")
+            clickSearchScenariosButton()
+            enterSearchQuery("login")
+          }
+          itShould("show only matching scenario") {
+            capture(it)
+            assertScenarioListItemExists("Login with valid account")
+            assertScenarioListItemDoesNotExist("Open settings screen")
           }
         }
 
@@ -152,6 +169,16 @@ class UiTests(private val behavior: DescribedBehavior<TestRobot>) {
                   capture(it)
                   assertGoalNotAchievedByImageAssertion()
                 }
+              }
+            }
+            describe("when show scenario graph") {
+              doIt {
+                clickScenarioGraphButton()
+              }
+              itShould("show the scenario node in the graph") {
+                capture(it)
+                assertScenarioGraphNodeExists("scenario1")
+                closeScenarioGraphDialog()
               }
             }
           }
@@ -402,6 +429,11 @@ class UiTests(private val behavior: DescribedBehavior<TestRobot>) {
       describe("when add scenarios $secondGoal") {
         doIt {
           enterGoal(firstGoal)
+          // Fix the id here: the scenario graph shows scenario ids, and the random
+          // default id would make the graph screenshot non-deterministic.
+          expandOptions()
+          changeScenarioId("first_scenario")
+          collapseOptions()
           clickAddScenarioButton()
           enterGoal(secondGoal)
         }
@@ -436,6 +468,22 @@ class UiTests(private val behavior: DescribedBehavior<TestRobot>) {
               capture(it)
               assertTwoGoalAchieved()
             }
+          }
+        }
+        describe("when add dependency and show scenario graph") {
+          doIt {
+            expandOptions()
+            changeScenarioId("scenario1")
+            clickDependencyDropDown()
+            selectDependencyDropDown(firstGoal)
+            collapseOptions()
+            clickScenarioGraphButton()
+          }
+          itShould("show the dependency and the scenario in the graph") {
+            capture(it)
+            assertScenarioGraphNodeExists("scenario1")
+            assertScenarioGraphNodeWithTextExists(firstGoal)
+            closeScenarioGraphDialog()
           }
         }
         describe("when add dependency and change dependency id and run") {
@@ -517,6 +565,47 @@ class TestRobot(
 
   fun clickGenerateScenarioButton() {
     composeUiTest.onNode(hasContentDescription("Generate")).performClick()
+    waitALittle()
+  }
+
+  fun clickSearchScenariosButton() {
+    composeUiTest.onNode(hasTestTag("scenario_search_button")).performClick()
+    waitALittle()
+  }
+
+  fun enterSearchQuery(query: String) {
+    composeUiTest.onNode(hasTestTag("scenario_search_field")).performTextInput(query)
+    waitALittle()
+  }
+
+  fun assertScenarioListItemExists(goal: String) {
+    composeUiTest.onNode(hasText("Goal: $goal", substring = true)).assertExists()
+  }
+
+  fun assertScenarioListItemDoesNotExist(goal: String) {
+    composeUiTest.onNode(hasText("Goal: $goal", substring = true)).assertDoesNotExist()
+  }
+
+  fun clickScenarioGraphButton() {
+    composeUiTest.onNode(hasTestTag("scenario_graph_button")).performClick()
+    waitALittle()
+  }
+
+  fun assertScenarioGraphNodeExists(scenarioId: String) {
+    composeUiTest.onNode(hasTestTag("scenario_graph_dialog")).assertExists()
+    composeUiTest.onNode(hasTestTag("graph_node_scenario:$scenarioId"), useUnmergedTree = true)
+      .assertExists()
+  }
+
+  fun assertScenarioGraphNodeWithTextExists(text: String) {
+    composeUiTest.onAllNodes(
+      hasText(text, substring = true) and hasAnyAncestor(hasTestTag("scenario_graph_dialog")),
+      useUnmergedTree = true
+    ).onFirst().assertExists()
+  }
+
+  fun closeScenarioGraphDialog() {
+    composeUiTest.onNode(hasTestTag("close_scenario_graph_button")).performClick()
     waitALittle()
   }
 
@@ -810,6 +899,9 @@ class TestRobot(
       availableDeviceListFactory = {
         listOf(ArbigentAvailableDevice.Fake())
       },
+      // Run the holder's coroutines on the same test dispatcher runTest is driving, so the UI test
+      // stays deterministic now that there is no process-wide dispatcher global.
+      dispatcher = testScope.coroutineContext[CoroutineDispatcher]!!,
     )
     setContent {
       CompositionLocalProvider(

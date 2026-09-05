@@ -3,6 +3,7 @@ package io.github.takahirom.arbigent.cli
 import io.github.takahirom.arbigent.result.ArbigentAgentResult
 import io.github.takahirom.arbigent.result.ArbigentAgentResults
 import io.github.takahirom.arbigent.result.ArbigentAgentTaskStepResult
+import io.github.takahirom.arbigent.result.ArbigentStepSource
 import io.github.takahirom.arbigent.result.ArbigentProjectExecutionResult
 import io.github.takahirom.arbigent.result.ArbigentScenarioDeviceFormFactor
 import io.github.takahirom.arbigent.result.ArbigentScenarioResult
@@ -47,13 +48,13 @@ class ExecutionSummaryTest {
                       stepId = "step-1",
                       apiCallJsonPath = firstCodexLog.absolutePath,
                       timestamp = 3000L,
-                      cacheHit = true,
+                      stepSource = ArbigentStepSource.Cache,
                     ),
                     step(
                       stepId = "step-2",
                       apiCallJsonPath = secondCodexLog.absolutePath,
                       timestamp = 7000L,
-                      cacheHit = false,
+                      stepSource = ArbigentStepSource.Ai,
                     ),
                   ),
                 )
@@ -81,7 +82,7 @@ class ExecutionSummaryTest {
     stepId: String,
     apiCallJsonPath: String,
     timestamp: Long,
-    cacheHit: Boolean,
+    stepSource: ArbigentStepSource,
   ): ArbigentAgentTaskStepResult {
     return ArbigentAgentTaskStepResult(
       stepId = stepId,
@@ -90,7 +91,7 @@ class ExecutionSummaryTest {
       apiCallJsonPath = apiCallJsonPath,
       agentAction = "Goal achieved",
       timestamp = timestamp,
-      cacheHit = cacheHit,
+      stepSource = stepSource,
     )
   }
 }

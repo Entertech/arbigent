@@ -1,3 +1,4 @@
+import io.github.takahirom.arbigent.result.ArbigentStepSource
 import androidx.compose.runtime.*
 import io.github.takahirom.arbigent.result.*
 import kotlinx.datetime.Instant
@@ -217,6 +218,11 @@ private fun AgentResultView(taskIndex: Int, agentResult: ArbigentAgentResult) {
     Div {
       Text("Task($taskIndex) Goal: ${agentResult.goal}")
     }
+    agentResult.callBreadcrumb?.let { breadcrumb ->
+      Div {
+        Text("Called via: $breadcrumb")
+      }
+    }
     Div {
       Text("Max Steps: ${agentResult.maxStep}")
     }
@@ -267,14 +273,20 @@ private fun StepView(step: ArbigentAgentTaskStepResult) {
         }
       }
     ) {
-      if (step.cacheHit) {
+      if (step.stepSource != ArbigentStepSource.Ai) {
         Pre({
           style {
             whiteSpace("pre-wrap")
             backgroundColor(Color.lightgreen)
           }
         }) {
-          Text("Cache Hit")
+          Text(
+            when (step.stepSource) {
+              ArbigentStepSource.Cache -> "Cache Hit"
+              ArbigentStepSource.Replay -> "Replayed"
+              ArbigentStepSource.Ai -> ""
+            }
+          )
         }
       }
       if (step.agentAction?.contains("MCP") == true) {
@@ -311,7 +323,7 @@ private fun StepView(step: ArbigentAgentTaskStepResult) {
             marginBottom(10.px)
           }
         }) {
-          if (!step.cacheHit) {
+          if (step.stepSource == ArbigentStepSource.Ai) {
             A(
               href = step.apiCallJsonPath,
               attrs = {
@@ -327,7 +339,13 @@ private fun StepView(step: ArbigentAgentTaskStepResult) {
             }
           } else {
             Div {
-              Text("AI Request/Response (JSONL): ${step.apiCallJsonPath} (Cache Hit)")
+              Text(
+                "AI Request/Response (JSONL): ${step.apiCallJsonPath} " +
+                  when (step.stepSource) {
+                    ArbigentStepSource.Replay -> "(Replayed)"
+                    else -> "(Cache Hit)"
+                  }
+              )
             }
           }
         }
@@ -344,7 +362,7 @@ private fun StepView(step: ArbigentAgentTaskStepResult) {
     }) {
       if (step.screenshotFilePath.isNotEmpty()) {
         val isAnnotatedExpandDefault = !step.summary.contains("Image assertion", ignoreCase = true)
-          && !step.cacheHit
+          && step.stepSource == ArbigentStepSource.Ai
         ExpandableSection("Annotated Screenshot", defaultExpanded = isAnnotatedExpandDefault) {
           AsyncImage(
             path = step.screenshotFilePath.substringBeforeLast(".") + "_annotated." + step.screenshotFilePath.substringAfterLast(

@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.buildconfig) apply false
 }
 
+// This fork consumes Maestro from Maven Central (ai.looktech:maestro-*, see
+// gradle/libs.versions.toml) rather than upstream's pinned maestro.zip download, so
+// gradle/maestro.gradle.kts is intentionally NOT applied (kept in-tree for reference).
+
 allprojects {
     tasks.withType(Test::class).configureEach {
         testLogging {

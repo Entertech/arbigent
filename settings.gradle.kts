@@ -18,6 +18,10 @@ pluginManagement {
         id("org.jetbrains.kotlin.plugin.compose").version(extra["kotlin.version"] as String)
     }
 }
+plugins {
+    // Auto-provisions the JDK 21 toolchain required by arbigent-ui (Jewel) on CI.
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
@@ -38,6 +42,7 @@ include(":arbigent-core")
 include(":arbigent-mcp-client")
 include(":arbigent-device-maestro")
 include(":arbigent-ai-openai")
+include(":arbigent-ai-anthropic")
 include(":arbigent-cli")
 include(":arbigent-ui")
 include(":arbigent-core-web-report")

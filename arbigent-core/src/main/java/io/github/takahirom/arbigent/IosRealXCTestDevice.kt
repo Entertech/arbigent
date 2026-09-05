@@ -285,7 +285,7 @@ internal object IosRealDeviceCatalog {
  *   calls xcTestDevice.setPermissions right after, which handles what it can
  * - uninstall / clearAppState: devicectl equivalents
  */
-internal class ArbigentDevicectlIOSDevice(
+internal class IosRealXCTestDeviceController(
   deviceId: String,
   private val stub: device.IOSDevice,
 ) : device.IOSDevice by stub {

@@ -17,6 +17,7 @@ import com.jakewharton.mosaic.ui.Column
 import com.jakewharton.mosaic.ui.Text
 import io.github.takahirom.arbigent.*
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -42,6 +43,7 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
       "gemini" to GeminiAiConfig(),
       "azureopenai" to AzureOpenAiConfig(),
       "codex" to CodexAiConfig(),
+      "anthropic" to AnthropicAiConfig()
     )
     .defaultByName("openai")
 
@@ -85,8 +87,9 @@ class ArbigentRunTaskCommand : CliktCommand(name = "task") {
       )
       val appSettings = CliAppSettings(workingDirectory = workingDirectory, path = null)
       // Fresh AI per agent run keeps per-runtime state (e.g. Codex CLI session
-      // id) from leaking across retries of this task.
-      val arbigentProject = ArbigentProject(projectFileContent, aiFactory = { aiProvider.createAi() }, deviceFactory = { device }, appSettings = appSettings)
+      // id) from leaking across retries of this task. This is also the composition root for
+      // `run task`: the production dispatcher is created here and threaded down.
+      val arbigentProject = ArbigentProject(projectFileContent, aiFactory = { aiProvider.createAi() }, deviceFactory = { device }, appSettings = appSettings, dispatcher = Dispatchers.Default)
       val scenarios = arbigentProject.scenarios
 
       Runtime.getRuntime().addShutdownHook(object : Thread() {

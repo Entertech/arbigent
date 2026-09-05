@@ -1,72 +1,128 @@
 package io.github.takahirom.arbigent
 
-import java.util.concurrent.TimeUnit
+import java.io.File
 
-internal object IosCodeSigningTeamResolver {
-  private val teamIdRegex = Regex("""\(([A-Z0-9]{10})\)""")
+/**
+ * Resolves the Apple developer team id used to re-sign the XCTest runner for a physical device
+ * (`DEVELOPMENT_TEAM`).
+ *
+ * Resolution order (per PR-B design):
+ *   1. Explicit config/CLI option ([ArbigentIosRealDeviceConfiguration.appleTeamId]).
+ *   2. Environment variable [ArbigentIosRealDeviceSettings.ENV_APPLE_TEAM_ID].
+ *   3. Auto-detection from the keychain, but ONLY when exactly one team owns the installed
+ *      "Apple Development" certificates. Zero or multiple → fail with an actionable message.
+ *
+ * The team id is the certificate's Organizational Unit (OU), NOT the parenthetical in the common
+ * name "Apple Development: Name (XXXXXXXXXX)" — that parenthetical is the individual/user id and is
+ * rejected by xcodebuild as an unknown team. We therefore read the OU from the certificate subject.
+ *
+ * Team ids are treated as sensitive: never logged in full (see [maskTeamId]).
+ */
+public object IosCodeSigningTeamResolver {
+  private val TEAM_ID_REGEX = Regex("^[A-Z0-9]{10}$")
 
-  private class CachedTeam(val id: String?)
+  // Matches the OU in an openssl `-nameopt multiline` subject dump, e.g.
+  //   "organizationalUnitName    = 84ABCDE123"
+  private val OU_REGEX = Regex("""organizationalUnitName\s*=\s*([A-Z0-9]{10})""")
+  private val PEM_CERT_REGEX =
+    Regex("""-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----""", RegexOption.DOT_MATCHES_ALL)
 
-  // Detection shells out to `security find-identity` and may warn; configs are
-  // constructed once per listed device, so cache the outcome. A 0-team result is
-  // NOT cached: it can be transient (locked keychain, `security` timeout, identity
-  // installed later) and long-lived processes (arbigent-ui) must be able to pick
-  // the identity up on a later refresh.
-  @Volatile
-  private var cachedTeam: CachedTeam? = null
+  public fun resolve(
+    config: ArbigentIosRealDeviceConfiguration,
+    env: (String) -> String? = System::getenv,
+    executor: ArbigentCommandExecutor = DefaultArbigentCommandExecutor(),
+  ): String {
+    config.appleTeamId?.trim()?.takeIf { it.isNotBlank() }?.let { return validate(it, "CLI option/settings") }
+    env(ArbigentIosRealDeviceSettings.ENV_APPLE_TEAM_ID)?.trim()?.takeIf { it.isNotBlank() }
+      ?.let { return validate(it, "environment ${ArbigentIosRealDeviceSettings.ENV_APPLE_TEAM_ID}") }
 
-  fun autoDetectTeamId(): String? {
-    cachedTeam?.let { return it.id }
-    val teams = detectTeamIds()
-    return when (teams.size) {
-      0 -> null
-      1 -> teams.single().also {
-        cachedTeam = CachedTeam(it)
-        arbigentInfoLog("Auto-detected Apple Team ID: $it")
+    val teamId = autoDetectFromKeychain(executor)
+    arbigentInfoLog("iOS real device: auto-detected Apple team id ${maskTeamId(teamId)} from codesigning identities")
+    return validate(teamId, "keychain auto-detection")
+  }
+
+  private fun autoDetectFromKeychain(executor: ArbigentCommandExecutor): String {
+    val pem = executor.execute(
+      listOf("security", "find-certificate", "-a", "-c", "Apple Development", "-p")
+    )
+    val subjects = PEM_CERT_REGEX.findAll(pem.stdout).mapNotNull { match ->
+      val tmp = File.createTempFile("arbigent-appledev-cert", ".pem").apply { writeText(match.value) }
+      try {
+        executor.execute(
+          listOf("openssl", "x509", "-in", tmp.absolutePath, "-noout", "-subject", "-nameopt", "multiline")
+        ).takeIf { it.isSuccess }?.stdout
+      } finally {
+        tmp.delete()
       }
-      else -> {
-        arbigentWarnLog(
-          "Multiple Apple Team IDs are available for code signing: ${teams.joinToString(", ")}. " +
-            "Set ios-xctest-apple-team-id in .arbigent/settings.local.yml."
-        )
-        cachedTeam = CachedTeam(null)
-        null
-      }
+    }.toList()
+    return teamIdFromSubjects(subjects)
+  }
+
+  /** Extracts the single team id (certificate OU) from openssl subject dumps. */
+  public fun teamIdFromSubjects(subjects: List<String>): String {
+    val teamIds = subjects.flatMap { subject -> OU_REGEX.findAll(subject).map { it.groupValues[1] } }.toSet()
+    return when {
+      teamIds.isEmpty() -> throw IllegalStateException(
+        "No 'Apple Development' code-signing team found in your keychain. Set the Apple team id via " +
+          "the ios-xctest-apple-team-id option or the ${ArbigentIosRealDeviceSettings.ENV_APPLE_TEAM_ID} " +
+          "environment variable, and ensure a signing certificate is installed."
+      )
+      teamIds.size > 1 -> throw IllegalStateException(
+        "Multiple Apple developer teams found in your keychain; cannot auto-detect. Choose one by " +
+          "setting the ios-xctest-apple-team-id option or the " +
+          "${ArbigentIosRealDeviceSettings.ENV_APPLE_TEAM_ID} environment variable."
+      )
+      else -> teamIds.first()
     }
   }
 
-  fun detectedTeamsMessage(): String {
-    val teams = detectTeamIds()
-    return when (teams.size) {
-      0 -> "No valid Apple code-signing teams were detected by `security find-identity -v -p codesigning`."
-      1 -> "Detected Apple Team ID: ${teams.single()}."
-      else -> "Detected multiple Apple Team IDs: ${teams.joinToString(", ")}."
+  private fun validate(teamId: String, source: String): String {
+    require(TEAM_ID_REGEX.matches(teamId)) {
+      "Invalid Apple team id from $source: expected 10 uppercase alphanumeric characters."
     }
+    return teamId
   }
 
-  internal fun parseTeamIds(securityFindIdentityOutput: String): Set<String> {
-    return teamIdRegex.findAll(securityFindIdentityOutput)
-      .map { it.groupValues[1] }
-      .toSet()
+  /**
+   * Masks a team id for logging, keeping only the first two characters (e.g. "84********"). Team
+   * ids are never logged in full.
+   */
+  public fun maskTeamId(teamId: String): String =
+    if (teamId.length <= 2) "****" else teamId.take(2) + "*".repeat(teamId.length - 2)
+
+  // ---- Fork compatibility: IosRealXCTestDeviceConfig / IosRealXCTestDriverProducts ----
+
+  private class CachedAutoDetection(val teamId: String?)
+
+  // Detection shells out per certificate and configs are built once per listed device, so the
+  // outcome is cached. A zero-team result is NOT cached (locked keychain, `security` hiccup,
+  // identity installed later); a "multiple teams" result is deterministic and is cached so the
+  // warning is logged once instead of once per device.
+  @Volatile private var cachedAutoDetection: CachedAutoDetection? = null
+
+  /**
+   * Best-effort variant of [resolve]'s keychain step: null when zero or multiple teams are found
+   * instead of throwing, so the fork's config can fall through to its own actionable error.
+   */
+  public fun autoDetectTeamId(executor: ArbigentCommandExecutor = DefaultArbigentCommandExecutor()): String? {
+    cachedAutoDetection?.let { return it.teamId }
+    if (!System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)) return null
+    return runCatching { autoDetectFromKeychain(executor) }
+      .onSuccess {
+        arbigentInfoLog("iOS real device: auto-detected Apple team id ${maskTeamId(it)} from codesigning certificates")
+        cachedAutoDetection = CachedAutoDetection(it)
+      }
+      .onFailure { failure ->
+        arbigentWarnLog(failure.message ?: "Apple team id auto-detection failed")
+        if (failure.message?.startsWith("Multiple Apple developer teams") == true) {
+          cachedAutoDetection = CachedAutoDetection(null)
+        }
+      }
+      .getOrNull()
   }
 
-  private fun detectTeamIds(): Set<String> {
-    if (!System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
-      return emptySet()
-    }
-    return runCatching {
-      val process = ProcessBuilder("security", "find-identity", "-v", "-p", "codesigning")
-        .redirectOutput(ProcessBuilder.Redirect.PIPE)
-        .redirectError(ProcessBuilder.Redirect.PIPE)
-        .start()
-      if (!process.waitFor(5, TimeUnit.SECONDS)) {
-        process.destroyForcibly()
-        return@runCatching emptySet<String>()
-      }
-      if (process.exitValue() != 0) {
-        return@runCatching emptySet<String>()
-      }
-      parseTeamIds(process.inputStream.bufferedReader().readText())
-    }.getOrDefault(emptySet())
-  }
+  /** One-line diagnostic for error messages; never prints a full team id. */
+  public fun detectedTeamsMessage(executor: ArbigentCommandExecutor = DefaultArbigentCommandExecutor()): String =
+    runCatching { "Detected Apple Team ID: ${maskTeamId(autoDetectFromKeychain(executor))}." }
+      .getOrElse { it.message ?: "No Apple code-signing team could be detected." }
 }

@@ -64,7 +64,12 @@ public sealed interface ArbigentScenarioExecutorState {
   }
 }
 
-public class ArbigentScenarioExecutor {
+public class ArbigentScenarioExecutor internal constructor(
+  // Required: threaded into every ArbigentAgent this executor creates, originating at the
+  // application composition root. No default so the compiler rejects any path that forgets it.
+  private val dispatcher: CoroutineDispatcher,
+) {
+  private val replayTraceStore = ArbigentReplayTraceStore()
   private val _taskAssignmentsStateFlow =
     MutableStateFlow<List<ArbigentTaskAssignment>>(listOf())
   private val _taskAssignmentsHistoryStateFlow =
@@ -81,7 +86,7 @@ public class ArbigentScenarioExecutor {
   public fun taskAssignments(): List<ArbigentTaskAssignment> = _taskAssignmentsStateFlow.value
   private var executeJob: Job? = null
   private val coroutineScope =
-    CoroutineScope(ArbigentCoroutinesDispatcher.dispatcher + SupervisorJob())
+    CoroutineScope(dispatcher + SupervisorJob())
   private val _arbigentScenarioRunningInfoStateFlow: MutableStateFlow<ArbigentScenarioRunningInfo?> =
     MutableStateFlow(null)
   public val runningInfoFlow: StateFlow<ArbigentScenarioRunningInfo?> =
@@ -183,20 +188,55 @@ public class ArbigentScenarioExecutor {
     arbigentDebugLog("Arbigent.execute start")
     _taskAssignmentsHistoryStateFlow.value = listOf()
 
+    val replayTraceKeys = scenario.replayTraceKeys()
+    val replayTraces = if (scenario.replayWithFallback) {
+      replayTraceKeys.map(replayTraceStore::read)
+        .takeIf { traces -> traces.isNotEmpty() && traces.all { it != null } }
+        ?.map { trace -> requireNotNull(trace) }
+    } else {
+      null
+    }
+    var attemptMode = if (replayTraces != null) {
+      ArbigentAttemptMode.ReplayWithFallback
+    } else {
+      ArbigentAttemptMode.Normal
+    }
+    if (attemptMode == ArbigentAttemptMode.ReplayWithFallback) {
+      arbigentInfoLog("Starting replay for scenario ${scenario.id}")
+    }
+
     var finishedSuccessfully = false
     var retryRemain = scenario.maxRetry
+    var normalRetriesExhausted = false
+    // What a task replayed before it fell back, by task index. A replacement agent starts from the
+    // device state those actions left behind and records only what it did from there, so a trace
+    // written from its steps alone would not be replayable from the start of the task.
+    val replayedPrefixes = mutableMapOf<Int, List<ArbigentContextHolder.Step>>()
     try {
       do {
         yield()
+        replayedPrefixes.clear()
         _taskAssignmentsStateFlow.value.forEach {
           it.agent.cancel()
         }
-        _taskAssignmentsStateFlow.value = scenario.agentTasks.map { task ->
-          ArbigentTaskAssignment(task, ArbigentAgent(task.agentConfig))
+        _taskAssignmentsStateFlow.value = scenario.agentTasks.mapIndexed { index, task ->
+          ArbigentTaskAssignment(
+            task,
+            ArbigentAgent(
+              agentConfig = task.agentConfig,
+              dispatcher = dispatcher,
+              replayTrace = replayTraces?.get(index)
+                .takeIf { attemptMode == ArbigentAttemptMode.ReplayWithFallback },
+            ),
+          )
         }
         _taskAssignmentsHistoryStateFlow.value += listOf(taskAssignments())
-        for ((index, taskAgent) in taskAssignments().withIndex()) {
-          val (task, agent) = taskAgent
+        // Tasks that already fell back to normal execution in this attempt. A task gets one
+        // fallback: failing again is an ordinary failure and restarts the whole scenario.
+        val fellBackTaskIndexes = mutableSetOf<Int>()
+        var index = 0
+        while (index < taskAssignments().size) {
+          val (task, agent) = taskAssignments()[index]
           _arbigentScenarioRunningInfoStateFlow.value = ArbigentScenarioRunningInfo(
             allTasks = taskAssignments().size,
             runningTasks = index + 1,
@@ -224,6 +264,42 @@ public class ArbigentScenarioExecutor {
             )
           }
           if (!agent.isGoalAchieved()) {
+            // A replayed task that fails is not evidence that the tasks before it are wrong: it is
+            // this task's recorded actions, or the assertion judging them, that did not hold. Only
+            // this task is re-run under the AI, and the tasks after it replay again — a trace that
+            // no longer starts from the screen the AI left behind diverges on its first step and
+            // falls back the same way. Restarting the whole scenario instead would throw away
+            // every task already replayed, which is the entire saving the mode exists for.
+            if (attemptMode == ArbigentAttemptMode.ReplayWithFallback &&
+              fellBackTaskIndexes.add(index)
+            ) {
+              arbigentInfoLog(
+                "Replay fallback for scenario ${scenario.id}, task ${index + 1}: " +
+                  "${replayFailureReason(agent)}. Re-running this task in normal mode and keeping the " +
+                  "tasks before it.",
+              )
+              // A task that starts by resetting the device resets again when it is re-run here, so
+              // the AI ran from the same place a replay of this task would start from and its steps
+              // stand alone as a trace. Only a task that carries on from the previous one needs the
+              // actions it had already replayed put back in front of them.
+              if (!task.resetsDeviceState()) {
+                replayedPrefixes[index] = agent.latestArbigentContext()?.steps().orEmpty()
+              }
+              agent.cancel()
+              _taskAssignmentsStateFlow.value = taskAssignments().toMutableList().also {
+                it[index] = ArbigentTaskAssignment(
+                  task,
+                  ArbigentAgent(
+                    agentConfig = task.agentConfig,
+                    dispatcher = dispatcher,
+                    replayTrace = null,
+                  ),
+                )
+              }
+              _taskAssignmentsHistoryStateFlow.value += listOf(taskAssignments())
+              yield()
+              continue
+            }
             arbigentDebugLog("Arbigent.execute break because agent is not achieved")
             break
           }
@@ -231,9 +307,27 @@ public class ArbigentScenarioExecutor {
             arbigentDebugLog("Arbigent.execute all agents are achieved")
             finishedSuccessfully = true
           }
+          index++
           yield()
         }
-      } while (!finishedSuccessfully && retryRemain-- > 0)
+        if (!finishedSuccessfully) {
+          if (attemptMode == ArbigentAttemptMode.ReplayWithFallback) {
+            // A task failed even after its own fallback to normal execution. The tasks before it
+            // are now the suspect: a replayed one may have ended somewhere close enough that its
+            // assertions passed but wrong enough that this task cannot proceed. Every retry from
+            // here is fully AI-driven, so replaying a drifting prefix cannot burn them all.
+            arbigentInfoLog(
+              "Replay fallback for scenario ${scenario.id} did not recover. " +
+                "Restarting all tasks and initializers in normal mode.",
+            )
+            attemptMode = ArbigentAttemptMode.Normal
+          } else if (retryRemain > 0) {
+            retryRemain--
+          } else {
+            normalRetriesExhausted = true
+          }
+        }
+      } while (!finishedSuccessfully && !normalRetriesExhausted)
     } catch (e: CancellationException) {
       arbigentDebugLog("Arbigent.execute canceled")
     } catch (e: Exception) {
@@ -246,15 +340,60 @@ public class ArbigentScenarioExecutor {
       }
     }
     if (!isGoalAchieved()) {
+      if (normalRetriesExhausted && scenario.replayWithFallback) {
+        replayTraceKeys.forEach(replayTraceStore::delete)
+      }
       _isFailedToArchiveFlow.value = true
       arbigentErrorLog("🔴 ${scenario.id} scenario failed")
       throw FailedToArchiveException(
         "Failed to archive scenario:" + statusText() + " retryRemain:$retryRemain"
       )
     } else {
+      if (scenario.replayWithFallback) {
+        taskAssignments().forEachIndexed { index, assignment ->
+          val key = replayTraceKeys[index]
+          val candidate = assignment.agent.latestArbigentContext()
+            ?.let {
+              ArbigentReplayTrace.candidateFrom(
+                key = key,
+                contextHolder = it,
+                precedingSteps = replayedPrefixes[index].orEmpty(),
+              )
+            }
+          val reason = if (candidate == null) {
+            "the run produced no steps to record"
+          } else {
+            candidate.invalidReasonFor(key)
+          }
+          if (reason == null) {
+            replayTraceStore.write(key, requireNotNull(candidate))
+          } else {
+            replayTraceStore.delete(key)
+            arbigentInfoLog(
+              "Not recording a replay trace for scenario ${scenario.id}, task ${index + 1}: $reason",
+            )
+          }
+        }
+      }
       arbigentInfoLog("🟢 ${scenario.id} scenario completed successfully")
     }
     arbigentDebugLog("Arbigent.execute end")
+  }
+
+  /**
+   * Why the replayed [agent] gave up, taken from its own steps. Reading every task's steps instead
+   * would report a divergence an earlier task recovered from, in preference to the one that
+   * actually stopped this task.
+   */
+  private fun replayFailureReason(agent: ArbigentAgent): String {
+    return listOfNotNull(agent.latestArbigentContext()).asSequence()
+      .flatMap { contextHolder -> contextHolder.steps().asReversed().asSequence() }
+      .mapNotNull { step -> step.feedback }
+      .firstOrNull { feedback ->
+        feedback.startsWith("Replay diverged") ||
+          feedback.startsWith("Failed replay image assertion")
+      }
+      ?: "replay task execution failed"
   }
 
   public fun cancel() {
@@ -284,15 +423,38 @@ public class ArbigentScenarioExecutor {
     }"
   }
 
-  public class Builder {
+  public class Builder(
+    // Required — supplied by the ArbigentScenarioExecutor(dispatcher) factory.
+    public val dispatcher: CoroutineDispatcher,
+  ) {
     public fun build(): ArbigentScenarioExecutor {
-      return ArbigentScenarioExecutor()
+      return ArbigentScenarioExecutor(dispatcher)
     }
   }
 }
 
-public fun ArbigentScenarioExecutor(block: ArbigentScenarioExecutor.Builder.() -> Unit = {}): ArbigentScenarioExecutor {
-  val builder = ArbigentScenarioExecutor.Builder()
+private fun ArbigentScenario.replayTraceKeys(): List<ArbigentReplayTraceKey> =
+  agentTasks.mapIndexed { index, task ->
+    ArbigentReplayTraceKey(
+      version = BuildConfig.VERSION_NAME,
+      scenarioId = id,
+      taskIndex = index,
+      taskIdentity = buildString {
+        append(task.scenarioId)
+        task.callBreadcrumb?.let { breadcrumb ->
+          append(":")
+          append(breadcrumb)
+        }
+      },
+      goal = task.agentConfig.resolveGoal(task.goal),
+    )
+  }
+
+public fun ArbigentScenarioExecutor(
+  dispatcher: CoroutineDispatcher,
+  block: ArbigentScenarioExecutor.Builder.() -> Unit = {},
+): ArbigentScenarioExecutor {
+  val builder = ArbigentScenarioExecutor.Builder(dispatcher)
   builder.block()
   return builder.build()
 }

@@ -31,6 +31,7 @@ import com.jakewharton.mosaic.ui.Text
 import io.github.takahirom.arbigent.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -47,6 +48,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       "gemini" to GeminiAiConfig(),
       "azureopenai" to AzureOpenAiConfig(),
       "codex" to CodexAiConfig(),
+      "anthropic" to AnthropicAiConfig()
     )
     .defaultByName("openai")
 
@@ -137,6 +139,7 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       is GeminiAiConfig -> "gemini"
       is AzureOpenAiConfig -> "azureopenai"
       is CodexAiConfig -> "codex"
+      is AnthropicAiConfig -> "anthropic"
       else -> "unknown"
     }}")
     arbigentDebugLog("  log-level: $logLevel")
@@ -152,6 +155,8 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       path = path,
       variables = variables
     )
+    // Composition root for the `run` command: the one place the production dispatcher is created and
+    // threaded down (no per-signature defaults, no process-wide global).
     val arbigentProject = loadArbigentProject(
       projectFile = projectFilePath,
       // Create a fresh AI per agent run so per-runtime state (e.g. Codex CLI
@@ -159,7 +164,8 @@ class ArbigentRunCommand : CliktCommand(name = "run") {
       // the UI, which also constructs a new AI for each agent instance.
       aiFactory = { aiProvider.createAi() },
       deviceFactory = { device ?: throw UnsupportedOperationException("Device not available in dry-run mode") },
-      appSettings = appSettings
+      appSettings = appSettings,
+      dispatcher = Dispatchers.Default,
     )
     if (scenarioIds.isNotEmpty() && tags.isNotEmpty()) {
       throw IllegalArgumentException("Cannot specify both scenario IDs and tags. Please create an issue if you need this feature.")

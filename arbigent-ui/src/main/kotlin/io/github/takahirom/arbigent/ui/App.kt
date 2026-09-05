@@ -2,7 +2,6 @@ package io.github.takahirom.arbigent.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
@@ -13,17 +12,37 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import io.github.takahirom.arbigent.ArbigentAvailableDevice
 import io.github.takahirom.arbigent.ArbigentDeviceOs
 import io.github.takahirom.arbigent.arbigentDebugLog
 import io.github.takahirom.arbigent.ui.ArbigentAppStateHolder.DeviceConnectionState
 import io.github.takahirom.arbigent.ui.ArbigentAppStateHolder.ProjectDialogState
+import io.github.takahirom.arbigent.ui.components.ComboBoxItem
 import kotlinx.coroutines.launch
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.component.*
 import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.painter.hints.Size
-import org.jetbrains.jewel.ui.theme.simpleListItemStyle
+
+// Label for a device in the picker. Names alone can collide (a simulator and a phone, two phones,
+// two simulators, or two Android devices with the same model name), so when a name is shared we
+// append a disambiguating hint: a physical iPhone shows its masked UDID; anything else shows its OS
+// plus an ordinal among the same-named devices, so two simulators (or two Android devices) never
+// render identically without leaking a raw identifier. Selection itself is keyed by the device
+// object, not this label.
+private fun deviceItemLabel(device: ArbigentAvailableDevice, all: List<ArbigentAvailableDevice>): String {
+  val sameName = all.filter { it.name == device.name }
+  if (sameName.size <= 1) return device.name
+  val hint = when (device) {
+    is ArbigentAvailableDevice.IosReal -> "iOS device ${device.maskedUdid}"
+    else -> {
+      val ordinal = sameName.indexOfFirst { it.stableKey == device.stableKey } + 1
+      "${device.deviceOs.name} #$ordinal"
+    }
+  }
+  return "${device.name} ($hint)"
+}
 
 @Composable
 fun App(
@@ -112,6 +131,24 @@ private fun MainScreen(
         appStateHolder.projectDialogState.value = ProjectDialogState.NotSelected
       }
     )
+  } else if (projectDialogState is ProjectDialogState.ShowReusableScenariosDialog) {
+    ReusableScenariosDialog(
+      appStateHolder = appStateHolder,
+      onCloseRequest = {
+        appStateHolder.projectDialogState.value = ProjectDialogState.NotSelected
+      },
+      onScenarioSelected = { reusableScenarioId ->
+        appStateHolder.updateReusableStepSelection(reusableScenarioId)
+        appStateHolder.projectDialogState.value = ProjectDialogState.NotSelected
+      }
+    )
+  } else if (projectDialogState is ProjectDialogState.ShowScenarioGraphDialog) {
+    ScenarioGraphDialog(
+      appStateHolder = appStateHolder,
+      onCloseRequest = {
+        appStateHolder.projectDialogState.value = ProjectDialogState.NotSelected
+      }
+    )
   }
   val scenarioIndex by appStateHolder.selectedScenarioIndex.collectAsState()
   var scenariosWidth by remember { mutableStateOf(200.dp) }
@@ -152,8 +189,9 @@ private fun MainScreen(
                 Text("No dependency")
               }
             )
-            appStateHolder.sortedScenariosAndDepthsStateFlow.value.map { it.first }
-              .filter { senario -> senario != scenarioStateHolderAndDepth.first }
+            // Scenarios that already depend on this one are left out: choosing one would create
+            // a dependency cycle, which the project can neither load nor save.
+            appStateHolder.selectableDependencies(scenarioStateHolderAndDepth.first)
               .forEach { scenarioStateHolder: ArbigentScenarioStateHolder ->
                 selectableItem(
                   selected = scenarioStateHolderAndDepth.first.dependencyScenarioStateHolderStateFlow.value == scenarioStateHolder,
@@ -164,7 +202,7 @@ private fun MainScreen(
                   content = {
                     Text(
                       modifier = Modifier.testTag("dependency_scenario"),
-                      text = scenarioStateHolder.goal
+                      text = scenarioStateHolder.goal.ifBlank { scenarioStateHolder.id }
                     )
                   }
                 )
@@ -195,7 +233,16 @@ private fun MainScreen(
           getFixedScenarioById = { scenarioId ->
             appStateHolder.getFixedScenarioById(scenarioId)
           },
-          mcpServerNames = appStateHolder.mcpServerNamesFlow.collectAsState().value
+          mcpServerNames = appStateHolder.mcpServerNamesFlow.collectAsState().value,
+          onShowReusableScenariosDialog = { scenarioStateHolder, index ->
+            appStateHolder.onShowReusableScenariosDialogWithContext(scenarioStateHolder, index)
+          },
+          getReusableScenarioById = { reusableScenarioId ->
+            appStateHolder.getReusableScenarioById(reusableScenarioId)
+          },
+          onMakeReusable = { scenarioStateHolder, newReusableId ->
+            appStateHolder.makeScenarioReusable(scenarioStateHolder, newReusableId)
+          }
         )
       }
     }
@@ -266,49 +313,42 @@ fun ScenarioControls(appStateHolder: ArbigentAppStateHolder) {
       Column {
         ArbigentDeviceOs.entries.forEach { item ->
           val isSelected = item == deviceOs
-          val isItemHovered = false
-          val isPreviewSelection = false
-          SimpleListItem(
+          ComboBoxItem(
             text = item.name,
-            state = ListItemState(isSelected, isItemHovered, isPreviewSelection),
-            modifier = Modifier
-              .clickable {
-                devicesStateHolder.selectedDeviceOs.value = item
-                devicesStateHolder.fetchDevices()
-                devicesStateHolder.onSelectedDeviceChanged(null)
-              },
-            style = JewelTheme.simpleListItemStyle,
-            contentDescription = item.name,
+            isSelected = isSelected,
+            onClick = {
+              // The holder's OS collector re-fetches on this change; no explicit fetch needed (which
+              // would only launch a second, redundant discovery).
+              devicesStateHolder.selectedDeviceOs.value = item
+              devicesStateHolder.onSelectedDeviceChanged(null)
+            },
           )
         }
       }
     }
 
     val selectedDevice by devicesStateHolder.selectedDevice.collectAsState()
-    val items = devicesStateHolder.devices.collectAsState().value.map { it.name }
+    val deviceList = devicesStateHolder.devices.collectAsState().value
     arbigentDebugLog("selectedDevice: $selectedDevice")
     ComboBox(
       modifier = Modifier.width(170.dp).padding(end = 2.dp),
-      labelText = selectedDevice?.name ?: "Select device",
+      labelText = selectedDevice?.let { deviceItemLabel(it, deviceList) } ?: "Select device",
       maxPopupHeight = 150.dp,
     ) {
       Column {
-        items.forEach { itemText ->
-          val isSelected = itemText == selectedDevice?.name
-          val isItemHovered = false
-          val isPreviewSelection = false
-          SimpleListItem(
-            text = itemText,
-            state = ListItemState(isSelected, isItemHovered, isPreviewSelection),
-            modifier = Modifier
-              .clickable {
-                devicesStateHolder.onSelectedDeviceChanged(devicesStateHolder.devices.value.firstOrNull { it.name == itemText })
-                devicesStateHolder.selectedDevice.value?.let {
-                  appStateHolder.onClickConnect(devicesStateHolder)
-                }
-              },
-            style = JewelTheme.simpleListItemStyle,
-            contentDescription = itemText,
+        // Iterate device objects (not display names) so a simulator and a phone, or two phones, that
+        // share a name each select the exact device the user clicked rather than the first name match.
+        deviceList.forEach { device ->
+          val isSelected = device == selectedDevice
+          ComboBoxItem(
+            text = deviceItemLabel(device, deviceList),
+            isSelected = isSelected,
+            onClick = {
+              devicesStateHolder.onSelectedDeviceChanged(device)
+              devicesStateHolder.selectedDevice.value?.let {
+                appStateHolder.onClickConnect(devicesStateHolder)
+              }
+            },
           )
         }
       }

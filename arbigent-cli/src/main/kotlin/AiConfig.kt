@@ -7,6 +7,7 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.long
+import io.github.takahirom.arbigent.AnthropicAi
 import io.github.takahirom.arbigent.ArbigentInternalApi
 import io.github.takahirom.arbigent.CodexCliAiProvider
 import io.github.takahirom.arbigent.OpenAIAi
@@ -87,4 +88,12 @@ class CodexAiConfig : AiConfig("Options for Codex CLI AI") {
     envvar = "ARBIGENT_CODEX_DIRECT",
     help = "Call the model over direct HTTP using the local ChatGPT subscription (reads ~/.codex/auth.json) instead of spawning the codex CLI per step. Removes the per-step process spawn and enables prompt caching."
   ).flag(default = false)
+}
+class AnthropicAiConfig : AiConfig("Options for Anthropic API AI") {
+  private val defaultEndpoint = AnthropicAi.DEFAULT_ANTHROPIC_BASE_URL
+  val anthropicEndpoint by defaultOption("--anthropic-endpoint", help = "Endpoint URL (default: $defaultEndpoint)")
+    .default(defaultEndpoint, defaultForHelp = defaultEndpoint)
+  val anthropicModelName by defaultOption("--anthropic-model-name", help = "Model name (default: ${AnthropicAi.DEFAULT_ANTHROPIC_MODEL})")
+    .default(AnthropicAi.DEFAULT_ANTHROPIC_MODEL, AnthropicAi.DEFAULT_ANTHROPIC_MODEL)
+  val anthropicApiKey by defaultOption("--anthropic-api-key", "--anthropic-key", envvar = "ANTHROPIC_API_KEY", help = "API key")
 }

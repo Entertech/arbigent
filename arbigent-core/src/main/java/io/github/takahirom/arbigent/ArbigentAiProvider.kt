@@ -31,6 +31,7 @@ public data class ArbigentAiRuntime(
 public enum class ArbigentAiTransport {
   OpenAiCompatibleHttp,
   CodexCliExec,
+  AnthropicMessagesHttp,
 }
 
 public enum class ArbigentAiCapability {

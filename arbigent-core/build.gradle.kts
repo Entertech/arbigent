@@ -25,8 +25,15 @@ kotlin {
 buildConfig {
   packageName("io.github.takahirom.arbigent")
   buildConfigField("VERSION_NAME", version.toString())
+  buildConfigField("MAESTRO_VERSION", libs.versions.maestro.get())
   useKotlinOutput { internalVisibility = false }
 }
+
+// This fork consumes Maestro from Maven Central (ai.looktech:maestro-*, published from
+// Entertech/Maestro with the iOS backPress / settle-timeout / orientation patches) instead of
+// upstream's pinned maestro.zip pipeline (gradle/maestro.gradle.kts, kept for reference only).
+// Upstream's IosRealDriverProducts (runner source packaged as an ios-real-driver/ resource) is
+// therefore dormant here; physical iPhones go through the fork's IosRealXCTestDevice path.
 
 dependencies {
   implementation(project(":arbigent-core-web-report"))

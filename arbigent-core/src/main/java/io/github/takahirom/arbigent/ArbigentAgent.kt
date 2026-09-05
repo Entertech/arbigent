@@ -1,5 +1,7 @@
 package io.github.takahirom.arbigent
 
+import io.github.takahirom.arbigent.result.ArbigentStepSource
+
 import com.mayakapps.kache.JavaFileKache
 import com.mayakapps.kache.KacheStrategy
 import io.github.takahirom.arbigent.ArbigentAgent.*
@@ -27,9 +29,23 @@ import kotlin.io.path.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 
-public class ArbigentAgent(
-  agentConfig: AgentConfig
+public class ArbigentAgent internal constructor(
+  agentConfig: AgentConfig,
+  // Required (no default): the scenario executor threads its own dispatcher in, which ultimately
+  // originates at the application composition root. Keeping it mandatory means the compiler rejects
+  // any construction path that forgets to propagate it, so there is no silent fallback.
+  dispatcher: CoroutineDispatcher,
+  // Required (no default), for the same reason as dispatcher: a forgotten trace would silently
+  // degrade to normal execution, and the failed attempt would then purge the AI-decision cache as
+  // if it were an ordinary failure. Null means normal AI-driven execution.
+  private val replayTrace: ArbigentReplayTrace?,
 ) {
+  private val attemptMode: ArbigentAttemptMode = if (replayTrace != null) {
+    ArbigentAttemptMode.ReplayWithFallback
+  } else {
+    ArbigentAttemptMode.Normal
+  }
+
   private val ai by lazy { agentConfig.aiFactory() }
   public val device: ArbigentDevice by lazy { agentConfig.deviceFactory() }
   private val interceptors: List<ArbigentInterceptor> = agentConfig.interceptors
@@ -66,8 +82,12 @@ public class ArbigentAgent(
       }
     }
   )
-  private val stepInterceptors: List<ArbigentStepInterceptor> = interceptors
-    .filterIsInstance<ArbigentStepInterceptor>()
+  private val stepInterceptors: List<ArbigentStepInterceptor> = buildList {
+    if (replayTrace != null) {
+      add(ArbigentReplayPacingStepInterceptor(replayTrace))
+    }
+    addAll(interceptors.filterIsInstance<ArbigentStepInterceptor>())
+  }
   private val stepChain: suspend (StepInput) -> StepResult = { input ->
     var chain: suspend (StepInput) -> StepResult = { stepInput -> step(stepInput) }
     stepInterceptors.reversed().forEach { interceptor ->
@@ -79,8 +99,12 @@ public class ArbigentAgent(
     chain(input)
   }
 
-  private val decisionInterceptors: List<ArbigentDecisionInterceptor> = interceptors
-    .filterIsInstance<ArbigentDecisionInterceptor>()
+  private val decisionInterceptors: List<ArbigentDecisionInterceptor> = buildList {
+    if (replayTrace != null) {
+      add(ArbigentReplayDecisionInterceptor(replayTrace))
+    }
+    addAll(interceptors.filterIsInstance<ArbigentDecisionInterceptor>())
+  }
   private val decisionChain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput = { input ->
     var chain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput = { decisionInput ->
       ArbigentGlobalStatus.onAi {
@@ -133,7 +157,7 @@ public class ArbigentAgent(
   }
   
   private val coroutineScope =
-    CoroutineScope(ArbigentCoroutinesDispatcher.dispatcher + SupervisorJob())
+    CoroutineScope(dispatcher + SupervisorJob())
   private var job: Job? = null
   private val arbigentContextHistoryStateFlow: MutableStateFlow<List<ArbigentContextHolder>> =
     MutableStateFlow(listOf())
@@ -215,6 +239,7 @@ public class ArbigentAgent(
       device = device,
       ai = ai,
       aiOptions = aiOptions,
+      attemptMode = attemptMode,
       createContextHolder = { g, m ->
         ArbigentContextHolder(
           g,
@@ -255,6 +280,7 @@ public class ArbigentAgent(
     val device: ArbigentDevice,
     val ai: ArbigentAi,
     val aiOptions: ArbigentAiOptions?,
+    val attemptMode: ArbigentAttemptMode,
     val cacheOptions: ArbigentScenarioCacheOptions = ArbigentScenarioCacheOptions(),
     val createContextHolder: (String, Int) -> ArbigentContextHolder,
     val addContextHolder: (ArbigentContextHolder) -> Unit,
@@ -265,7 +291,7 @@ public class ArbigentAgent(
     val decisionChain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput,
     val imageAssertionChain: (ArbigentAi.ImageAssertionInput) -> ArbigentAi.ImageAssertionOutput,
     val executeActionChain: suspend (ExecuteActionsInput) -> ExecuteActionsOutput,
-    val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
+    val goalCompletionVerifier: ArbigentGoalCompletionVerifier = AcceptingArbigentGoalCompletionVerifier,
     val mcpClient: MCPClient? = null,
     val mcpOptions: ArbigentMcpOptions? = null,
   )
@@ -285,10 +311,11 @@ public class ArbigentAgent(
     val decisionChain: suspend (ArbigentAi.DecisionInput) -> ArbigentAi.DecisionOutput,
     val imageAssertionChain: (ArbigentAi.ImageAssertionInput) -> ArbigentAi.ImageAssertionOutput,
     val executeActionChain: suspend (ExecuteActionsInput) -> ExecuteActionsOutput,
-    val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
+    val goalCompletionVerifier: ArbigentGoalCompletionVerifier = AcceptingArbigentGoalCompletionVerifier,
     val prompt: ArbigentPrompt,
     val aiOptions: ArbigentAiOptions?,
     val cacheOptions: ArbigentScenarioCacheOptions = ArbigentScenarioCacheOptions(),
+    val attemptMode: ArbigentAttemptMode,
     val mcpClient: MCPClient? = null,
     val mcpOptions: ArbigentMcpOptions? = null,
   )
@@ -346,6 +373,12 @@ public class AgentConfig(
   internal val appSettings: ArbigentAppSettings?,
   internal val goalCompletionVerifier: ArbigentGoalCompletionVerifier,
 ) {
+  internal fun resolveGoal(goal: String): String {
+    return appSettings?.variables?.let { variables ->
+      GoalVariableResolver.resolve(goal, variables)
+    } ?: goal
+  }
+
   public class Builder {
     private val interceptors = mutableListOf<ArbigentInterceptor>()
     private var deviceFactory: (() -> ArbigentDevice)? = null
@@ -613,6 +646,81 @@ public sealed interface ArbigentAiDecisionCache {
   public object Disabled : ArbigentAiDecisionCache
 }
 
+internal class ArbigentDecisionCacheInterceptor(
+  private val aiDecisionCache: ArbigentAiDecisionCache.Enabled,
+  private val cacheOptions: ArbigentScenarioCacheOptions,
+) : ArbigentDecisionInterceptor, ArbigentExecutionInterceptor {
+  override suspend fun intercept(
+    decisionInput: ArbigentAi.DecisionInput,
+    chain: ArbigentDecisionInterceptor.Chain,
+  ): ArbigentAi.DecisionOutput {
+    if (!cacheOptions.forceCacheDisabled) {
+      val cached = aiDecisionCache.get(decisionInput.cacheKey)
+      if (cached != null) {
+        arbigentInfoLog("AI-decision cache hit with view tree and prompt")
+        return cached.copy(
+          step = cached.step.copy(
+            timestamp = TimeProvider.get().currentTimeMillis(),
+            screenshotFilePath = decisionInput.screenshotFilePath,
+          )
+        )
+      }
+      // Fuzzy fallback (fork; opt-in via ARBIGENT_DECISION_CACHE_FUZZY_THRESHOLD, default
+      // off): replay the most similar same-context cached decision instead of calling the
+      // model. Assertions still run live, so this can never fabricate a passing test.
+      DecisionCacheFuzzy.threshold()?.let { threshold ->
+        val similarKey = aiDecisionCache.getSimilarKey(
+          decisionInput.cacheKey,
+          decisionInput.uiTreeStrings.optimizedTreeString,
+          threshold,
+        )
+        val similar = similarKey?.let { aiDecisionCache.get(it) }
+        if (similar != null) {
+          arbigentInfoLog("AI-decision cache FUZZY hit (>=$threshold) via $similarKey")
+          aiDecisionCache.set(decisionInput.cacheKey, similar)
+          return similar.copy(
+            step = similar.step.copy(
+              timestamp = TimeProvider.get().currentTimeMillis(),
+              screenshotFilePath = decisionInput.screenshotFilePath,
+            )
+          )
+        }
+      }
+      arbigentDebugLog("AI-decision cache miss with view tree and prompt")
+      val output = chain.proceed(decisionInput)
+      aiDecisionCache.set(
+        decisionInput.cacheKey,
+        output.copy(
+          step = output.step.copy(stepSource = ArbigentStepSource.Cache)
+        ),
+      )
+      return output
+    }
+    return chain.proceed(decisionInput)
+  }
+
+  override suspend fun intercept(
+    executeInput: ExecuteInput,
+    chain: ArbigentExecutionInterceptor.Chain,
+  ): ExecutionResult {
+    val output = chain.proceed(executeInput)
+    if (executeInput.attemptMode == ArbigentAttemptMode.Normal) {
+      when (output) {
+        is ExecutionResult.Failed -> purge(output.contextHolder)
+        is ExecutionResult.Cancelled -> purge(output.contextHolder)
+        ExecutionResult.Success -> Unit
+      }
+    }
+    return output
+  }
+
+  private suspend fun purge(contextHolder: ArbigentContextHolder?) {
+    contextHolder?.steps()?.forEach { step ->
+      aiDecisionCache.remove(step.cacheKey)
+    }
+  }
+}
+
 public fun AgentConfigBuilder(
   prompt: ArbigentPrompt,
   scenarioType: ArbigentScenarioType,
@@ -685,6 +793,8 @@ public fun AgentConfigBuilder(
 
       is ArbigentScenarioContent.InitializationMethod.LaunchApp -> {
         addInterceptor(object : ArbigentInitializerInterceptor {
+          override val resetsDeviceState: Boolean = true
+
           override fun intercept(
             device: ArbigentDevice,
             chain: ArbigentInitializerInterceptor.Chain
@@ -709,6 +819,8 @@ public fun AgentConfigBuilder(
 
       is ArbigentScenarioContent.InitializationMethod.CleanupData -> {
         addInterceptor(object : ArbigentInitializerInterceptor {
+          override val resetsDeviceState: Boolean = true
+
           override fun intercept(
             device: ArbigentDevice,
             chain: ArbigentInitializerInterceptor.Chain
@@ -729,6 +841,8 @@ public fun AgentConfigBuilder(
 
       is ArbigentScenarioContent.InitializationMethod.OpenLink -> {
         addInterceptor(object : ArbigentInitializerInterceptor {
+          override val resetsDeviceState: Boolean = true
+
           override fun intercept(
             device: ArbigentDevice,
             chain: ArbigentInitializerInterceptor.Chain
@@ -749,25 +863,31 @@ public fun AgentConfigBuilder(
 
       is ArbigentScenarioContent.InitializationMethod.MaestroYaml -> {
         addInterceptor(object : ArbigentInitializerInterceptor {
+          // A flow can do anything, so it is read as resetting: taking a trace from the wrong
+          // starting point costs a diverged replay, replaying actions the flow already undid can
+          // repeat them for real.
+          override val resetsDeviceState: Boolean = true
+
           override fun intercept(
             device: ArbigentDevice,
             chain: ArbigentInitializerInterceptor.Chain
           ) {
-            // Look up the YAML content from the fixed scenarios
-            val fixedScenario = fixedScenarios.find { it.id == initializeMethod.scenarioId }
-            if (fixedScenario == null) {
+            // Prefer inline yamlContent (set when {{inputs.*}} were substituted for a reusable
+            // scenario), otherwise look up the YAML content from the fixed scenarios.
+            val yamlText = initializeMethod.yamlContent
+              ?: fixedScenarios.find { it.id == initializeMethod.scenarioId }?.yamlText
+            if (yamlText == null) {
               arbigentErrorLog("Fixed scenario with id ${initializeMethod.scenarioId} not found")
               chain.proceed(device)
               return
             }
-            // Use the YAML content from the fixed scenario
             device.executeActions(
               MaestroFlowParser.parseFlow(
                 flowPath = Path(ArbigentFiles.parentDir),
-                flow = fixedScenario.yamlText
+                flow = yamlText
               )
             )
-            arbigentDebugLog("Executing Maestro YAML for scenario: ${fixedScenario.title}")
+            arbigentDebugLog("Executing Maestro YAML for scenario: ${initializeMethod.scenarioId}")
             chain.proceed(device)
           }
         })
@@ -776,87 +896,7 @@ public fun AgentConfigBuilder(
   }
   // Add cache control interceptor
   if (aiDecisionCache is ArbigentAiDecisionCache.Enabled) {
-    addInterceptor(object : ArbigentDecisionInterceptor, ArbigentExecutionInterceptor {
-      override suspend fun intercept(
-        decisionInput: ArbigentAi.DecisionInput,
-        chain: ArbigentDecisionInterceptor.Chain
-      ): ArbigentAi.DecisionOutput {
-        // Only use cache if enabled in scenario options
-        if (!cacheOptions.forceCacheDisabled) {
-          val cached = aiDecisionCache.get(decisionInput.cacheKey)
-          if (cached != null) {
-            arbigentInfoLog("AI-decision cache hit with view tree and prompt")
-            return cached.copy(
-              step = cached.step.copy(
-                timestamp = TimeProvider.get().currentTimeMillis(),
-                screenshotFilePath = decisionInput.screenshotFilePath
-              )
-            )
-          }
-          // Fuzzy fallback (opt-in via ARBIGENT_DECISION_CACHE_FUZZY_THRESHOLD;
-          // default off): replay the most similar same-context cached decision
-          // instead of calling the model. Assertions still run live, so this can
-          // never fabricate a passing test.
-          DecisionCacheFuzzy.threshold()?.let { threshold ->
-            val similarKey = aiDecisionCache.getSimilarKey(
-              decisionInput.cacheKey,
-              decisionInput.uiTreeStrings.optimizedTreeString,
-              threshold,
-            )
-            val similar = similarKey?.let { aiDecisionCache.get(it) }
-            if (similar != null) {
-              arbigentInfoLog("AI-decision cache FUZZY hit (>=$threshold) via $similarKey")
-              aiDecisionCache.set(decisionInput.cacheKey, similar)
-              return similar.copy(
-                step = similar.step.copy(
-                  timestamp = TimeProvider.get().currentTimeMillis(),
-                  screenshotFilePath = decisionInput.screenshotFilePath
-                )
-              )
-            }
-          }
-          arbigentDebugLog("AI-decision cache miss with view tree and prompt")
-          val output = chain.proceed(decisionInput)
-          aiDecisionCache.set(
-            decisionInput.cacheKey, output.copy(
-              step = output.step.copy(
-                cacheHit = true,
-              )
-            )
-          )
-          return output
-        }
-        return chain.proceed(decisionInput)
-      }
-
-      override suspend fun intercept(
-        executeInput: ExecuteInput,
-        chain: ArbigentExecutionInterceptor.Chain
-      ): ExecutionResult {
-        val output: ExecutionResult = chain.proceed(executeInput)
-        when (output) {
-          is ExecutionResult.Failed -> {
-            output.contextHolder?.let { contextHolder ->
-              contextHolder.steps().forEach { step ->
-                aiDecisionCache.remove(step.cacheKey)
-              }
-            }
-          }
-
-          is ExecutionResult.Cancelled -> {
-            output.contextHolder?.let { contextHolder ->
-              contextHolder.steps().forEach { step ->
-                aiDecisionCache.remove(step.cacheKey)
-              }
-            }
-          }
-
-          ExecutionResult.Success -> {
-          }
-        }
-        return output
-      }
-    })
+    addInterceptor(ArbigentDecisionCacheInterceptor(aiDecisionCache, cacheOptions))
   }
   if (imageAssertions.assertions.isNotEmpty()) {
     addInterceptor(object : ArbigentImageAssertionInterceptor {
@@ -866,17 +906,15 @@ public fun AgentConfigBuilder(
       ): ArbigentAi.ImageAssertionOutput {
         val output = chain.proceed(
           imageAssertionInput.copy(
-            screenshotFilePaths = (1..imageAssertions.historyCount).mapNotNull { index ->
-              val path: String? = if (index == 1) {
-                imageAssertionInput.screenshotFilePaths.first()
-              } else {
-                imageAssertionInput.arbigentContextHolder.steps().reversed()
-                  .map { it.screenshotFilePath }
-                  .distinct()
-                  .getOrNull(index - 1)
-              }
-              path
-            },
+            screenshotFilePaths = assertionScreenshotFilePaths(
+              currentScreenshotFilePath = imageAssertionInput.screenshotFilePaths.first(),
+              previousScreenshotFilePaths = imageAssertionInput.arbigentContextHolder.steps()
+                .reversed()
+                .map { it.screenshotFilePath }
+                .distinct(),
+              historyCount = imageAssertions.historyCount,
+              captureAdditionalScreenshot = imageAssertionInput.captureAdditionalScreenshot,
+            ),
             assertions = imageAssertionInput.assertions + imageAssertions
           )
         )
@@ -911,6 +949,19 @@ public interface ArbigentInterceptor
 
 public interface ArbigentInitializerInterceptor : ArbigentInterceptor {
   public fun intercept(device: ArbigentDevice, chain: Chain)
+
+  /**
+   * Whether this initializer puts the device somewhere known regardless of where it was, the way
+   * launching an app or clearing its data does. Backing out or waiting does not.
+   *
+   * A recorded trace only replays correctly from the state it was recorded from. Initializers run
+   * again at the start of every run of their task, so a task that resets is back at the same place
+   * each time and what the AI did after the reset is a trace on its own. A task that does not reset
+   * starts wherever the previous task left off, so a run that fell back mid-task only makes sense
+   * as a trace together with the actions it had already replayed.
+   */
+  public val resetsDeviceState: Boolean
+    get() = false
   public fun interface Chain {
     public fun proceed(device: ArbigentDevice)
   }
@@ -967,6 +1018,110 @@ public interface ArbigentStepInterceptor : ArbigentInterceptor {
   }
 }
 
+
+private fun takeScreenshot(device: ArbigentDevice, id: String) {
+  for (it in 0..2) {
+    try {
+      device.executeActions(
+        actions = listOf(
+          MaestroCommand(
+            takeScreenshotCommand = TakeScreenshotCommand(id)
+          ),
+        ),
+      )
+      break
+    } catch (e: StatusRuntimeException) {
+      arbigentDebugLog("Failed to take screenshot: $e retry:$it")
+      Thread.sleep(1000)
+    }
+  }
+}
+
+private fun convertScreenshot(
+  originalScreenshotFilePath: String,
+  id: String,
+  imageFormat: ImageFormat,
+): String {
+  if (imageFormat == ImageFormat.PNG) {
+    return originalScreenshotFilePath
+  }
+  val convertedScreenshotFilePath =
+    ArbigentFiles.screenshotsDir.absolutePath + File.separator + "$id.webp"
+  val originalFile = File(originalScreenshotFilePath)
+  val originalImage = ImageIO.read(originalFile)
+  ArbigentImageEncoder.saveImage(
+    originalImage,
+    convertedScreenshotFilePath,
+    ImageFormat.WEBP
+  )
+  originalFile.delete()
+  originalImage.flush()
+  return convertedScreenshotFilePath
+}
+
+/**
+ * Takes one more screenshot of the same screen after [ADDITIONAL_SCREENSHOT_WAIT_MILLIS], so an
+ * assertion about what changes between images has a second frame to look at. Returns null when the
+ * screenshot could not be taken; the assertion then runs on what it already has.
+ */
+private fun captureAdditionalScreenshot(
+  device: ArbigentDevice,
+  stepId: String,
+  sequence: Int,
+  imageFormat: ImageFormat,
+): String? {
+  val id = "$stepId-history-$sequence"
+  Thread.sleep(ADDITIONAL_SCREENSHOT_WAIT_MILLIS)
+  takeScreenshot(device, id)
+  val originalScreenshotFilePath =
+    ArbigentFiles.screenshotsDir.absolutePath + File.separator + "$id.png"
+  if (!File(originalScreenshotFilePath).exists()) {
+    arbigentErrorLog("Failed to take an additional screenshot for the image assertion history.")
+    return null
+  }
+  return convertScreenshot(originalScreenshotFilePath, id, imageFormat)
+}
+
+// Long enough that a playing video or an animation has moved on, short enough to add to every
+// assertion that needs it without changing how a run feels.
+private const val ADDITIONAL_SCREENSHOT_WAIT_MILLIS = 1000L
+
+/**
+ * Screenshots handed to an image assertion, newest first: the one being judged, followed by up to
+ * [historyCount] - 1 earlier ones. When there are not that many, frames taken now fill the gap and
+ * lead the list, since they are newer than the one being judged.
+ *
+ * An assertion runs before its own step is recorded, so [previousScreenshotFilePaths] already
+ * starts at the immediately preceding screenshot. Skipping that first entry both delayed a
+ * two-image assertion until the third step of a task and then compared non-adjacent screenshots.
+ * An assertion about what changed between images cannot pass while it is handed only one.
+ *
+ * A step can be recorded against the screen the assertion is about before the assertion runs — a
+ * stuck screen or a failed screenshot both leave one behind — so the screenshot being judged is
+ * dropped from the history rather than handed over a second time as its own predecessor.
+ */
+internal fun assertionScreenshotFilePaths(
+  currentScreenshotFilePath: String,
+  previousScreenshotFilePaths: List<String>,
+  historyCount: Int,
+  captureAdditionalScreenshot: (() -> String?)? = null,
+): List<String> {
+  val paths = (listOf(currentScreenshotFilePath) +
+    previousScreenshotFilePaths
+      .filterNot { it == currentScreenshotFilePath }
+      .take((historyCount - 1).coerceAtLeast(0))).toMutableList()
+  // The first steps of a task have no earlier screenshot to offer. Rather than judging an
+  // assertion on fewer images than it asked for, which reads as the assertion failing, take the
+  // missing frames now.
+  val additionalPaths = mutableListOf<String>()
+  while (paths.size + additionalPaths.size < historyCount && captureAdditionalScreenshot != null) {
+    additionalPaths += captureAdditionalScreenshot() ?: break
+  }
+  // Nothing labels these images for the model: their order is the only thing that says which one
+  // is the newest. A frame taken now is newer than the one being judged, so it goes in front of
+  // it, keeping the whole list newest first however it was filled.
+  return additionalPaths.reversed() + paths
+}
 
 public fun defaultAgentActionTypesForVisualMode(): List<AgentActionType> {
   return listOf(
@@ -1207,6 +1362,7 @@ private suspend fun executeDefault(input: ExecuteInput): ExecutionResult {
         prompt = input.prompt,
         aiOptions = input.aiOptions,
         cacheOptions = input.cacheOptions,
+        attemptMode = input.attemptMode,
         mcpClient = input.mcpClient,
         mcpOptions = input.mcpOptions
       )
@@ -1258,23 +1414,7 @@ private suspend fun step(
 
   val stepId = contextHolder.generateStepId()
   val elements = device.elements()
-  for (it in 0..2) {
-    try {
-      device.executeActions(
-        actions = listOf(
-          MaestroCommand(
-            takeScreenshotCommand = TakeScreenshotCommand(
-              stepId
-            )
-          ),
-        ),
-      )
-      break
-    } catch (e: StatusRuntimeException) {
-      arbigentDebugLog("Failed to take screenshot: $e retry:$it")
-      Thread.sleep(1000)
-    }
-  }
+  takeScreenshot(device, stepId)
   val uiTreeStrings = device.viewTreeString()
   val uiTreeHash = uiTreeStrings.optimizedTreeString.hashCode().toString().replace("-", "")
   val contextHash = contextHolder.context(aiOptions).hashCode().toString().replace("-", "")
@@ -1309,22 +1449,7 @@ private suspend fun step(
     return StepResult.Failed
   }
   val imageFormat = stepInput.aiOptions?.imageFormat ?: ImageFormat.PNG
-  val screenshotFilePath = if (imageFormat == ImageFormat.PNG) {
-    originalScreenshotFilePath
-  } else {
-    val convertedScreenshotFilePath =
-      ArbigentFiles.screenshotsDir.absolutePath + File.separator + "$stepId.webp"
-    val originalFile = File(originalScreenshotFilePath)
-    val originalImage = ImageIO.read(originalFile)
-    ArbigentImageEncoder.saveImage(
-      originalImage,
-      convertedScreenshotFilePath,
-      ImageFormat.WEBP
-    )
-    originalFile.delete()
-    originalImage.flush()
-    convertedScreenshotFilePath
-  }
+  val screenshotFilePath = convertScreenshot(originalScreenshotFilePath, stepId, imageFormat)
   val requestUuid = java.util.UUID.randomUUID().toString()
   val decisionJsonlFilePath = ArbigentFiles.jsonlsDir.absolutePath + File.separator + "$requestUuid.jsonl"
   val lastStepOrNull = contextHolder.steps().lastOrNull()
@@ -1406,7 +1531,27 @@ private suspend fun step(
     aiOptions = stepInput.aiOptions,
     mcpTools = tools
   )
-  val decisionOutput = decisionChain(decisionInput)
+  val decisionOutput = try {
+    val output = decisionChain(decisionInput)
+    val action = output.step.agentAction ?: output.agentActions.singleOrNull()
+    output.copy(
+      step = output.step.copy(
+        targetElement = action?.withTargetIdentity(elements),
+      ),
+    )
+  } catch (exception: ReplayDivergenceException) {
+    val reason = "Replay diverged: ${exception.message}"
+    arbigentInfoLog(reason)
+    contextHolder.addStep(
+      ArbigentContextHolder.Step(
+        stepId = stepId,
+        feedback = reason,
+        cacheKey = cacheKey,
+        screenshotFilePath = screenshotFilePath,
+      )
+    )
+    return StepResult.Failed
+  }
   var executableDecisionOutput = decisionOutput
   if (decisionOutput.agentActions.any { it is GoalAchievedAgentAction }) {
     val imageAssertionOutput = imageAssertionChain(
@@ -1414,6 +1559,11 @@ private suspend fun step(
         ai = ai,
         arbigentContextHolder = contextHolder,
         screenshotFilePaths = listOf(screenshotFilePath),
+        captureAdditionalScreenshot = object : () -> String? {
+          private var sequence = 0
+          override fun invoke(): String? =
+            captureAdditionalScreenshot(device, stepId, ++sequence, imageFormat)
+        },
         // Added by interceptors
         assertions = ArbigentImageAssertions()
       )
@@ -1443,16 +1593,27 @@ private suspend fun step(
     } else {
       executableDecisionOutput = decisionOutput.copy(agentActions = emptyList())
       imageAssertionOutput.results.filter { it.isPassed.not() }.forEach {
+        val failureReason = "Failed replay image assertion '${it.assertionPrompt}': ${it.explanation}"
+        if (stepInput.attemptMode == ArbigentAttemptMode.ReplayWithFallback) {
+          arbigentInfoLog(failureReason)
+        }
         contextHolder.addStep(
           ArbigentContextHolder.Step(
             stepId = stepId,
-            feedback = "Failed to reach the goal by image assertion. Image assertion prompt:${it.assertionPrompt}. explanation:${it.explanation}",
+            feedback = if (stepInput.attemptMode == ArbigentAttemptMode.ReplayWithFallback) {
+              failureReason
+            } else {
+              "Failed to reach the goal by image assertion. Image assertion prompt:${it.assertionPrompt}. explanation:${it.explanation}"
+            },
             screenshotFilePath = screenshotFilePath,
             aiRequest = decisionOutput.step.aiRequest,
             cacheKey = cacheKey,
             aiResponse = decisionOutput.step.aiResponse
           )
         )
+      }
+      if (stepInput.attemptMode == ArbigentAttemptMode.ReplayWithFallback) {
+        return StepResult.Failed
       }
     }
   } else {

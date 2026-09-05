@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.types.choice
+import kotlinx.coroutines.CoroutineDispatcher
 import io.github.takahirom.arbigent.*
 import io.ktor.client.request.*
 import io.ktor.util.*
@@ -58,6 +59,11 @@ fun validateAiConfig(aiType: AiConfig) {
         throw CliktError("Missing Codex command. Please provide via --codex-command or ARBIGENT_CODEX_COMMAND.")
       }
     }
+    is AnthropicAiConfig -> {
+      if (aiType.anthropicApiKey.isNullOrBlank()) {
+        throw CliktError("Missing Anthropic API key. Please provide via --anthropic-api-key, ANTHROPIC_API_KEY environment variable, or in .arbigent/settings.local.yml")
+      }
+    }
   }
 }
 
@@ -83,6 +89,9 @@ fun setupArbigentFiles(workingDirectory: String?, logFile: String): ArbigentResu
   ArbigentFiles.logFile = resolveFile(workingDirectory, logFile)
   ArbigentFiles.cacheDir = resolveFile(workingDirectory, defaultCachePath + File.separator + BuildConfig.VERSION_NAME)
   ArbigentFiles.cacheDir.mkdirs()
+  // Traces live beside the cache, not under the result dir: they must survive across runs, and
+  // keeping them out of the version subdir means a cache reset does not discard them.
+  ArbigentFiles.traceDir = resolveFile(workingDirectory, defaultCachePath + File.separator + "traces")
   val resultFile = File(resultDir, "result.yml")
   return ArbigentResultDirs(resultDir, resultFile)
 }
@@ -152,6 +161,13 @@ fun createAiProvider(
         workingDirectory = workingDirectory,
       )
     }
+
+    is AnthropicAiConfig -> AnthropicAiProvider(
+      apiKey = aiType.anthropicApiKey!!,
+      baseUrl = aiType.anthropicEndpoint,
+      modelName = aiType.anthropicModelName,
+      loggingEnabled = aiApiLoggingEnabled,
+    )
   }
 }
 
@@ -176,6 +192,33 @@ fun isJourneyProjectSource(projectFile: String): Boolean {
 }
 
 /**
+ * Loads [projectFile] as project content, choosing the Journeys XML importer or the YAML loader.
+ * A project file that fails validation is reported as a plain [CliktError] message rather than an
+ * uncaught exception, since the user's fix is in the YAML, not in the command line.
+ */
+fun loadArbigentProjectFileContent(projectFile: String): ArbigentProjectFileContent =
+  asCliktError(projectFile) {
+    if (isJourneyProjectSource(projectFile)) {
+      ArbigentJourneyXmlImporter.loadProjectContent(File(projectFile))
+    } else {
+      ArbigentProjectSerializer().load(File(projectFile))
+    }
+  }
+
+/**
+ * Turns a validation failure into a [CliktError], naming the file it came from — the core reports
+ * the violations but has no idea which path was loaded.
+ */
+private fun <T> asCliktError(projectFile: String, block: () -> T): T = try {
+  block()
+} catch (e: ArbigentProjectValidationException) {
+  throw CliktError(
+    if (e.violations.isEmpty()) e.message
+    else arbigentValidationReport(e.violations, source = projectFile)
+  )
+}
+
+/**
  * Builds an [ArbigentProject] from [projectFile], loading Journeys XML when the path is a
  * journey source and falling back to the normal YAML loader otherwise.
  */
@@ -184,14 +227,16 @@ fun loadArbigentProject(
   aiFactory: () -> ArbigentAi,
   deviceFactory: () -> ArbigentDevice,
   appSettings: ArbigentAppSettings,
-): ArbigentProject {
-  return if (isJourneyProjectSource(projectFile)) {
+  dispatcher: CoroutineDispatcher,
+): ArbigentProject = asCliktError(projectFile) {
+  if (isJourneyProjectSource(projectFile)) {
     val projectFileContent = ArbigentJourneyXmlImporter.loadProjectContent(File(projectFile))
     ArbigentProject(
       projectFileContent = projectFileContent,
       aiFactory = aiFactory,
       deviceFactory = deviceFactory,
       appSettings = appSettings,
+      dispatcher = dispatcher,
     )
   } else {
     ArbigentProject(
@@ -199,6 +244,7 @@ fun loadArbigentProject(
       aiFactory = aiFactory,
       deviceFactory = deviceFactory,
       appSettings = appSettings,
+      dispatcher = dispatcher,
     )
   }
 }
