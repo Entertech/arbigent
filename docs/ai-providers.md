@@ -619,3 +619,26 @@ Gemini 3.1 Pro / GPT-5.6). ModelScope carries official weights + mlx-community 4
   as a grounding sub-model in a hybrid setup (specialist points, cheap VLM decides).
   Batched-action output (~40% of turns) is unused by arbigent's one-action-per-step loop —
   a possible future speedup if we support multi-action decisions.
+
+## Upstream 0.80 merge — 2026-09-05: what changed for model usage
+
+Merged takahirom/arbigent 0.80.0 (PR #386–#423) plus Maestro 2.10.0-looktech.0; decisions
+and follow-ups are in [upstream-convergence-plan.md](upstream-convergence-plan.md).
+
+- **Per-call token usage**: every provider HTTP response now writes
+  `arbigent-result/usages/<uuid>.json` (`model`, `input_tokens`, `cached_input_tokens`,
+  `output_tokens`, `total_tokens`), image assertions included. This is the missing input
+  for "how much did this run cost" — multiply by the price tables above (jq recipe in
+  quickstart-zh.md).
+- **Native Anthropic provider** (`--ai-type=anthropic`, `ANTHROPIC_API_KEY`,
+  `--anthropic-model-name`, default claude-sonnet-4-5; extended thinking via extraBody).
+  Wrapped into the fork's provider boundary and taught the fork-only actions
+  (GoHome / LaunchApp / Drag / Swipe, percentage ClickAtCoordinates). NOT benchmarked yet;
+  Claude Haiku 4.5 is the only candidate that fits the fast tier on price.
+- **KeyPress aliases**: `ENTER` / `KEYCODE_ENTER` / mixed case all resolve, and the list
+  of valid key names is shown to the model — removes one class of failed KeyPress steps.
+- **replayWithFallback** (`settings.cacheStrategy.replayWithFallback`): records the
+  action trace on a passing run, replays it with the recorded pacing on later runs, and
+  falls back to the AI only for the task whose target element vanished or whose image
+  assertion failed. Requires `imageAssertions` on the scenario. This supersedes the fork's
+  `DecisionCacheFuzzy` (same idea, weaker) for QA regression suites.

@@ -90,6 +90,13 @@ arbigent run \
 - **`report.html`** — 打开就是完整报告:每一步的截图(带操作标注)、AI 的思考和动作。
 - `summary.txt` — 一眼看成功/失败和失败原因。
 - `screenshots/`、`jsonls/` — 原始截图和 API 日志,报 bug 时把整个目录打包。
+- `usages/` — 每次模型调用一个 JSON(含图片断言),字段 `model` / `input_tokens` / `cached_input_tokens` / `output_tokens`。算这次跑了多少 token:
+
+```bash
+jq -s 'group_by(.model) | map({model: .[0].model, calls: length, input: (map(.input_tokens // 0) | add), output: (map(.output_tokens // 0) | add)})' arbigent-result/usages/*.json
+```
+
+  再乘以 [ai-providers.md](ai-providers.md) 里的单价就是这次的费用。
 
 ## 常见坑
 
@@ -103,5 +110,6 @@ arbigent run \
 | `env: gh: No such file or directory`(安装时) | 没装 GitHub CLI:`brew install gh && gh auth login` |
 | iOS 连不上 / XCTest 超时 | 按序排查:① **iPhone 屏幕锁了**——runner 日志(arbigent-result/maestro-xctest-logs/)出现 "failed to initialize for UI testing" 基本就是它,把 设置→显示与亮度→自动锁定 设为"永不";② 多台 iPhone(含无线配对)时 CLI 会选错设备,用 `--device=<UDID>` 钉死;③ 杀残留进程 `pkill -f xcodebuildmcp; pkill -f "iproxy --udid"`;④ 都不行再重启 iPhone |
 | 场景步数/重试配置不生效 | 字段名是 `maxStep` 和 `maxRetry`(写错如 maxStepCount 会被静默忽略,默认 10 步 / 重试 3 次) |
+| 同一个场景反复跑,每次都要付 AI 费用 | 场景配上 `imageAssertions` 后,在 project.yaml 的 `settings:` 下加 `cacheStrategy: { replayWithFallback: true }`:跑通一次后回放录下的动作,只有断言失败或元素找不到的那一步才回退到 AI(上游 0.80 特性) |
 
 模型选型、各家 API 的差异见 [ai-providers.md](ai-providers.md)。

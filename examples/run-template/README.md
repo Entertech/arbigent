@@ -38,7 +38,11 @@ cp settings.local.yml.example .arbigent/settings.local.yml
 arbigent run --scenario-ids=smoke-settings-battery
 ```
 
-跑完看 `arbigent-result/report.html`。
+跑完看 `arbigent-result/report.html`;算这次的 token 用量:
+
+```bash
+jq -s 'group_by(.model) | map({model: .[0].model, calls: length, input: (map(.input_tokens // 0) | add), output: (map(.output_tokens // 0) | add)})' arbigent-result/usages/*.json
+```
 
 ## 切换模型
 
