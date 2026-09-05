@@ -47,3 +47,12 @@ Maestro 依赖同步升到 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main
 - 单元测试：arbigent-core 278、arbigent-cli 72、arbigent-ai-openai 41、arbigent-ai-anthropic 40，全部 0 失败。
 - CLI：`arbigent --help` 列出 run / scenarios / tags / devices / graph / instruction / guide；`arbigent devices` 正常列出 Android + iOS 真机。
 - 真机冒烟：见本文件末尾"冒烟记录"。
+
+### 冒烟记录（2026-09-05，合并后的 CLI 构建，模型 qwen3.7-flash / DashScope）
+
+- **Android Pixel 8：✅ SUCCESS**。场景"打开设置→电池并确认电量显示"，3 步 / 22.9s，`usages/` 记录 3 次调用（input 16161 / output 541 tokens）。
+  首次尝试卡在 `AndroidDriver.open → DadbInstrumentationSession.startedSuccessfully`；同一位置 brew 里的旧版（0.74.0-looktech.3，Maestro 2.8）和手工 `adb shell am instrument` 也同样卡死，
+  所以是手机侧 instrumentation 卡住而非合并回归；`pm uninstall dev.mobile.maestro{,.test}` + `adb kill-server` 后即通过。
+- **iOS 12 mini：❌ 未验证**（验证资源）。带密码锁定，xcodebuild 报 "The developer disk image could not be mounted on this device"。
+- **iOS 13 Pro：❌ 未验证**（验证资源）。设备发现、上游 iproxy 转发、runner 安装都走通，launch 失败于 "Developer App Certificate is not trusted"，
+  需在手机 设置→通用→VPN 与设备管理 里信任开发者证书后重跑。上游的"唤醒 CoreDevice tunnel"办法（`xcrun devicectl device info details`）实测有效：两台都从 paired 变成 connected。
