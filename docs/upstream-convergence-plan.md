@@ -60,7 +60,8 @@ Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`，**自 09-15 起从
 - arbigent 本地：`:arbigent-core:dependencies --configuration compileClasspath -Dmaven.repo.local=<空目录> --refresh-dependencies --info`，8 个 maestro 模块的 `.module` / `.pom` 全部来自 `maven.pkg.github.com/Entertech/Maestro`，Central 的 `ai/looktech` 零次下载。
 - 无凭据路径：`-Pgpr.user= -Pgpr.key=` 时打出 skipped 警告并回落 Central（`-q` 会吞掉这条 warn）。
 - 坑：Gradle 只对 404 回落，`gpr.key` 过期或无 `read:packages` 会直接 401/403 失败，不会回落到 Central。
-- **CI 尚未验证**：`build-cli.yaml` 用 `GITHUB_TOKEN`（`packages: read`）跨仓库读 Entertech/Maestro 的公开包，需要 `gh workflow run publish-cli -R Entertech/arbigent --ref main` 跑一次，只看 `build` job（e2e 两个 job 在 fork 上一直红）。若在 maven.pkg.github.com 上 401，改为带 `read:packages` 的 PAT secret，`COMMITER_TOKEN` 不是已知替代。
+- CI：`publish-cli` run 34933715131（main `6a4ad0be`）`build` job 成功，`GITHUB_TOKEN`（`packages: read`）跨仓库读 Entertech/Maestro 的包可用，无需 PAT secret。判定依据：settings 没有打 skipped 警告（仓库已注册），而无 `read:packages` 的 token 对该 URL 返回 401、Gradle 对 401 不回落，成功即说明拿到了 200。e2e 两个 job 照旧红（fork 无模拟器 / adb）。这套 CI 的 Gradle 输出不打印 Download 行，别拿它当证据。
+- 匿名与可见性：Maven 类 package 只继承仓库可见性，Entertech/Maestro 是 public 但匿名 GET 仍 401（同文件在 Central 是 200）；GitHub 文档只对容器仓库开放匿名拉取。也就是说没有任何 GitHub 设置能免掉下载 token，只能免掉"手工建 PAT"：CI 用 `GITHUB_TOKEN`，本机可以让 `gh auth refresh -s read:packages` 后的 gh 登录代替 PAT（待拍板）。
 
 ### 冒烟记录（模型 qwen3.7-flash / DashScope，场景"打开设置→电池并确认电量显示"）
 
