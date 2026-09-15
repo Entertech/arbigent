@@ -1,7 +1,8 @@
 # Upstream 收敛（hybrid-grounding ↔ takahirom/arbigent main）
 
 状态（2026-09-15）：**已合并到 upstream 0.82.0**（`7151b801`，PR 至 0.82.0；合并提交 `f667504a`，此前 0.80.0 的合并是 `621f9cc`）。
-Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb786410`，Central 已放行）。Maestro 上游 2.10.0 之后没有新发布，
+Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`，**自 09-15 起从 GitHub Packages 解析**（`maven.pkg.github.com/Entertech/Maestro`，
+由 fork 的 `publish-github-packages.yaml` 发布；Central 上的同版本保留作回退）。用户拍板原话："我觉得换 github package 还方便你发版测试"。Maestro 上游 2.10.0 之后没有新发布，
 截至 09-15 只有 7 个未发布提交（orchestra YAML schema 推导、start-device API 37、cloud 上传路径、文档），不涉及 arbigent 用到的 client / driver，故不另出 fork 版本。
 下一次合并的冲突面已经很小：只剩本文第 2 节列出的几个"有意保留我方实现"的文件；0.82.0 这次只冲突了 `arbigent-cli/build.gradle.kts` 的一行依赖。
 
@@ -9,7 +10,7 @@ Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb78641
 
 | 领域 | 决策 | 理由 |
 |---|---|---|
-| Maestro 供应链 | **保留 Maven Central 线**（`gradle/libs.versions.toml` 的 `ai.looktech` 坐标）。上游的 `gradle/maestro.gradle.kts`（下载官方 maestro.zip + 源码 tar）留在树里但根 `build.gradle.kts` 不 apply；`arbigent-core` 的 `BuildConfig.MAESTRO_VERSION` 改读 version catalog | 我方 3 个 Maestro 补丁（iOS backPress 滑动、settle 超时可配、朝向回退）只在 fork 里，官方 zip 没有 |
+| Maestro 供应链 | **Maven 坐标不变（`gradle/libs.versions.toml` 的 `ai.looktech`），仓库改为 GitHub Packages**：`settings.gradle.kts` 在 `mavenCentral()` 之前注册 `maven.pkg.github.com/Entertech/Maestro`（`includeGroup("ai.looktech")`，凭据 `gpr.user`/`gpr.key` 或 `GITHUB_PACKAGES_USER`/`GITHUB_PACKAGES_TOKEN`，缺凭据时跳过并 warn，`mavenLocal()` 仍最前）。Maestro fork 用 init script 注入仓库、`publish-github-packages.yaml` 手动 dispatch 发布，不改任何模块 build 文件；`publish-release.yaml`（Central，staging）原样保留作回退。上游的 `gradle/maestro.gradle.kts` 留在树里但根 `build.gradle.kts` 不 apply；`BuildConfig.MAESTRO_VERSION` 读 version catalog | 我方 3 个 Maestro 补丁（iOS backPress 滑动、settle 超时可配、朝向回退）只在 fork 里，官方 zip 没有。GitHub Packages 省掉 Sonatype staging 与手动放行，但拉包也要 token：brew 用户无感（tar.gz 自带 jar），源码构建与 CI 需要凭据；GitHub Packages 没有 staging，版本一发即见且不能重传，迭代靠升 `-looktech.N` |
 | iOS 真机 | **继续走我方 `IosRealXCTestDevice` 路径**（DeviceFinder 只实例化 `IOSRealXCTest` / `IOSRealMirror`）。上游的 `IosReal` / `IosRealDriverProducts` / `ArbigentDevicectlIOSDevice`（上游版）留在树里但不被实例化（dormant，其 32 个单测照常跑） | 我方路径在 12 mini / 13 Pro 上反复验证过；上游 `IosRealDriverProducts` 依赖 maestro.gradle.kts 打进资源的 runner 源码，我们没启用。删掉上游文件会让下次合并变成 modify/delete 冲突 |
 | iproxy 转发 | **采纳上游** `IosRealXCTestPortForwarder.kt`（ownership pidfile、孤儿回收、端口占用诊断），我方内嵌在 ArbigentDeviceOs.kt 的版本删除 | 残留 iproxy 占 22087 是我们实际踩过的坑，上游系统性解决 |
 | Team ID 检测 | **采纳上游** OU 证书解析（`security find-certificate` + openssl），在其上补两个我方兼容函数 `autoDetectTeamId()` / `detectedTeamsMessage()`（0/多团队返回 null 而不抛，多团队结果缓存只警告一次） | 我方旧实现抓 CN 括号，对个人开发者证书是错的 |
@@ -24,6 +25,7 @@ Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb78641
 ## 2. 下次合并时仍会冲突的文件（我方有意分叉）
 
 - `arbigent-core/build.gradle.kts`、`build.gradle.kts`、`gradle/libs.versions.toml`、`sample-test/build.gradle.kts`（Maven 供应链）
+- `settings.gradle.kts`（GitHub Packages 仓库 + 凭据辅助函数）、`.github/workflows/build-cli.yaml`（`packages: read` + token 传递，以及 fork 的 dispatch / tap 行）、`CLAUDE.md`（源码构建凭据说明）
 - `arbigent-cli/build.gradle.kts`（依赖块：我方 anthropic / serialization 与上游新增依赖相邻，0.82.0 这次就冲突了一行）
 - `DeviceFinder.kt`（iOS 分支走我方目录）、`ArbigentDeviceOs.kt`（id/description + 我方两个 iOS 类）
 - `CommonOptions.kt` / `RunCommand.kt` / `RunTaskCommand.kt` / `main.kt`（`--device`、codex provider、devices 子命令）
@@ -43,12 +45,22 @@ Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb78641
 - 以上游为基底重移植我方 73 个提交：同样的结果，但要对着陌生结构逐个解 25 次冲突。
 - 直接用 mobile-dev-inc 官方 maestro.zip：丢掉 backPress / settle-timeout / 朝向三个补丁。
 - 删除上游 dormant 的 iOS 文件：下次合并变成 modify/delete 冲突，且丢掉 32 个单测的覆盖。
+- 用 Entertech/Maestro 的 GitHub Release maestro.zip 走上游 `maestro.gradle.kts`（免 token）：fork 要跑 jreleaser（`publish-cli.yaml` 的 mobile-dev-inc 门控、brew tap 副作用都得改），且上游 jar 列表没有 maestro-cli.jar，我方 `IosRealXCTestDriverProducts.kt` 依赖 `maestro.cli.driver`。比 GitHub Packages 多一圈机器，先不做。
+- Maven Central 走 auto release：用户原话"触发然后 staging 不要 auto release"，Central 路径保留时仍按 staging。
 
 ## 5. 验证证据（2026-09-15，0.82.0 合并后的 CLI 构建）
 
 - 单元测试：arbigent-core 318、arbigent-cli 107、arbigent-ai-openai 43、arbigent-ai-anthropic 44，全部 0 失败。
 - CI 同款命令 `./gradlew arbigent-cli:assemble` 产出 tar.gz / zip 及 `.sha256` / `.md5`；`build-cli.yaml` 里的 fork 行（workflow_dispatch、COMMITER_TOKEN 映射、Entertech tap）核对无丢失。
 - CLI：`arbigent --help` 列出 run / scenarios / tags / devices / graph / sort / instruction / guide / wrapper。
+
+### GitHub Packages 切换验证（2026-09-15）
+
+- Maestro fork `13b66f1a`：`publish-github-packages.yaml` run 34927410567 成功，10 个模块的 `2.10.0-looktech.0` 连签名一起上传，14 分钟。本地 `--dry-run` 事先确认每个模块都有 sign + publish 任务。
+- arbigent 本地：`:arbigent-core:dependencies --configuration compileClasspath -Dmaven.repo.local=<空目录> --refresh-dependencies --info`，8 个 maestro 模块的 `.module` / `.pom` 全部来自 `maven.pkg.github.com/Entertech/Maestro`，Central 的 `ai/looktech` 零次下载。
+- 无凭据路径：`-Pgpr.user= -Pgpr.key=` 时打出 skipped 警告并回落 Central（`-q` 会吞掉这条 warn）。
+- 坑：Gradle 只对 404 回落，`gpr.key` 过期或无 `read:packages` 会直接 401/403 失败，不会回落到 Central。
+- **CI 尚未验证**：`build-cli.yaml` 用 `GITHUB_TOKEN`（`packages: read`）跨仓库读 Entertech/Maestro 的公开包，需要 `gh workflow run publish-cli -R Entertech/arbigent --ref main` 跑一次，只看 `build` job（e2e 两个 job 在 fork 上一直红）。若在 maven.pkg.github.com 上 401，改为带 `read:packages` 的 PAT secret，`COMMITER_TOKEN` 不是已知替代。
 
 ### 冒烟记录（模型 qwen3.7-flash / DashScope，场景"打开设置→电池并确认电量显示"）
 
