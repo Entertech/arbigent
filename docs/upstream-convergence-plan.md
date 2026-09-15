@@ -24,6 +24,7 @@ Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb78641
 ## 2. 下次合并时仍会冲突的文件（我方有意分叉）
 
 - `arbigent-core/build.gradle.kts`、`build.gradle.kts`、`gradle/libs.versions.toml`、`sample-test/build.gradle.kts`（Maven 供应链）
+- `arbigent-cli/build.gradle.kts`（依赖块：我方 anthropic / serialization 与上游新增依赖相邻，0.82.0 这次就冲突了一行）
 - `DeviceFinder.kt`（iOS 分支走我方目录）、`ArbigentDeviceOs.kt`（id/description + 我方两个 iOS 类）
 - `CommonOptions.kt` / `RunCommand.kt` / `RunTaskCommand.kt` / `main.kt`（`--device`、codex provider、devices 子命令）
 - `AiConfig.kt`（codex 配置）、`README.md`（CLI 选项表）
