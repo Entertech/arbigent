@@ -17,6 +17,8 @@ env:
 
 permissions:
   contents: write
+  # ai.looktech:maestro-* resolves from GitHub Packages (Entertech/Maestro); see settings.gradle.kts.
+  packages: read
 
 jobs:
   build:
@@ -46,6 +48,9 @@ jobs:
         id: build
         run: |
           ./gradlew arbigent-cli:assemble --stacktrace
+        env:
+          GITHUB_PACKAGES_USER: ${{ github.actor }}
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4
         if: ${{ always() }}
@@ -126,6 +131,9 @@ jobs:
         id: build
         run: |
           ./gradlew arbigent-cli:installDist --stacktrace
+        env:
+          GITHUB_PACKAGES_USER: ${{ github.actor }}
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache arbigent
         uses: actions/cache@v4
@@ -193,6 +201,9 @@ jobs:
         id: build
         run: |
           ./gradlew arbigent-cli:installDist --stacktrace
+        env:
+          GITHUB_PACKAGES_USER: ${{ github.actor }}
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Xcode
         run: |
           # Select Xcode 15.4
