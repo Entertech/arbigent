@@ -1,8 +1,9 @@
 # Upstream 收敛（hybrid-grounding ↔ takahirom/arbigent main）
 
-状态（2026-09-05）：**已合并** upstream/main `be2a55c`（0.80.0，PR #386–#423）到 hybrid-grounding，合并提交 `621f9cc`。
-Maestro 依赖同步升到 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb786410`，上游 2.10.0 + 我方 3 个 iOS 补丁）。
-下一次合并的冲突面已经很小：只剩本文第 2 节列出的几个"有意保留我方实现"的文件。
+状态（2026-09-15）：**已合并到 upstream 0.82.0**（`7151b801`，PR 至 0.82.0；合并提交 `f667504a`，此前 0.80.0 的合并是 `621f9cc`）。
+Maestro 依赖为 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main `fb786410`，Central 已放行）。Maestro 上游 2.10.0 之后没有新发布，
+截至 09-15 只有 7 个未发布提交（orchestra YAML schema 推导、start-device API 37、cloud 上传路径、文档），不涉及 arbigent 用到的 client / driver，故不另出 fork 版本。
+下一次合并的冲突面已经很小：只剩本文第 2 节列出的几个"有意保留我方实现"的文件；0.82.0 这次只冲突了 `arbigent-cli/build.gradle.kts` 的一行依赖。
 
 ## 1. 合并时拍板的决策（及理由）
 
@@ -42,17 +43,16 @@ Maestro 依赖同步升到 `ai.looktech:maestro-* 2.10.0-looktech.0`（fork main
 - 直接用 mobile-dev-inc 官方 maestro.zip：丢掉 backPress / settle-timeout / 朝向三个补丁。
 - 删除上游 dormant 的 iOS 文件：下次合并变成 modify/delete 冲突，且丢掉 32 个单测的覆盖。
 
-## 5. 验证证据（2026-09-05）
+## 5. 验证证据（2026-09-15，0.82.0 合并后的 CLI 构建）
 
-- 单元测试：arbigent-core 278、arbigent-cli 72、arbigent-ai-openai 41、arbigent-ai-anthropic 40，全部 0 失败。
-- CLI：`arbigent --help` 列出 run / scenarios / tags / devices / graph / instruction / guide；`arbigent devices` 正常列出 Android + iOS 真机。
-- 真机冒烟：见本文件末尾"冒烟记录"。
+- 单元测试：arbigent-core 318、arbigent-cli 107、arbigent-ai-openai 43、arbigent-ai-anthropic 44，全部 0 失败。
+- CI 同款命令 `./gradlew arbigent-cli:assemble` 产出 tar.gz / zip 及 `.sha256` / `.md5`；`build-cli.yaml` 里的 fork 行（workflow_dispatch、COMMITER_TOKEN 映射、Entertech tap）核对无丢失。
+- CLI：`arbigent --help` 列出 run / scenarios / tags / devices / graph / sort / instruction / guide / wrapper。
 
-### 冒烟记录（2026-09-05，合并后的 CLI 构建，模型 qwen3.7-flash / DashScope）
+### 冒烟记录（模型 qwen3.7-flash / DashScope，场景"打开设置→电池并确认电量显示"）
 
-- **Android Pixel 8：✅ SUCCESS**。场景"打开设置→电池并确认电量显示"，3 步 / 22.9s，`usages/` 记录 3 次调用（input 16161 / output 541 tokens）。
-  首次尝试卡在 `AndroidDriver.open → DadbInstrumentationSession.startedSuccessfully`；同一位置 brew 里的旧版（0.74.0-looktech.3，Maestro 2.8）和手工 `adb shell am instrument` 也同样卡死，
-  所以是手机侧 instrumentation 卡住而非合并回归；`pm uninstall dev.mobile.maestro{,.test}` + `adb kill-server` 后即通过。
-- **iOS 12 mini：❌ 未验证**（验证资源）。带密码锁定，xcodebuild 报 "The developer disk image could not be mounted on this device"。
-- **iOS 13 Pro：❌ 未验证**（验证资源）。设备发现、上游 iproxy 转发、runner 安装都走通，launch 失败于 "Developer App Certificate is not trusted"，
-  需在手机 设置→通用→VPN 与设备管理 里信任开发者证书后重跑。上游的"唤醒 CoreDevice tunnel"办法（`xcrun devicectl device info details`）实测有效：两台都从 paired 变成 connected。
+- **Android Pixel 8：✅ SUCCESS**，3 步 / 23.3s（09-05 的 0.80.0 构建同场景也是 3 步通过）。
+  前一次尝试 maxStep=6 失败：第 1 步模型只回了 `perform_keypress BACK`（24 个 completion token，无描述、无 memo），属模型波动；随后 5 步感知与导航正确，第 6 步已点到 Battery 但步数耗尽。
+- **iOS 12 mini / 13 Pro：❌ 未验证**（验证资源）。两台都已解锁，上游的 tunnel 唤醒（`xcrun devicectl device info details`）、iproxy 转发、runner 安装均走通，
+  启动 runner 时报 "Developer App Certificate is not trusted"：需在手机 设置→通用→VPN 与设备管理 里信任开发者证书后重跑。
+- 09-05 附带发现：Pixel 8 的 UIAutomator instrumentation 曾整机卡死（旧版二进制与手工 `am instrument` 同样卡住），`pm uninstall dev.mobile.maestro{,.test}` + `adb kill-server` 后恢复。
