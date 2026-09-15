@@ -67,8 +67,10 @@ fun arbigentCli(): ArbigentCli = ArbigentCli()
     ArbigentTagsCommand(),
     ArbigentDevicesCommand(),
     ArbigentGraphCommand(),
+    ArbigentSortCommand(),
     ArbigentInstructionCommand(),
     ArbigentGuideCommand(),
+    ArbigentWrapperCommand(),
   )
 
 fun main(args: Array<String>) {

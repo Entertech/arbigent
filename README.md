@@ -284,6 +284,87 @@ brew tap takahirom/homebrew-repo
 brew install takahirom/repo/arbigent
 ```
 
+#### Wrapper
+
+If you would rather pin a version in your repository than ask everyone to install the
+CLI, generate a wrapper. It works like `gradlew`: the script downloads the pinned
+arbigent release on first use, verifies its SHA-256 checksum and runs it. Without
+`--version` it pins the release of the CLI that runs it; pass `--version <version>` to
+pin another one.
+
+```bash
+arbigent wrapper
+```
+
+If nobody on the team has arbigent installed yet, you can skip that step: download the
+script and let it pin a release itself.
+
+```bash
+curl -fsSLo arbigentw https://raw.githubusercontent.com/takahirom/arbigent/main/arbigent-cli/src/main/resources/arbigentw
+chmod +x arbigentw
+ARBIGENT_VERSION=<version> ./arbigentw --help
+```
+
+`<version>` is any release listed on the
+[releases page](https://github.com/takahirom/arbigent/releases).
+
+The first run with `ARBIGENT_VERSION` set writes the properties file from the checksum
+published beside the release, then behaves like any other run. Later runs read the pinned
+version from the committed file and ignore the variable.
+
+Either way you commit two files side by side:
+
+- `arbigentw`, a POSIX shell script.
+- `arbigentw.properties`, holding the version, the distribution URL and its SHA-256
+  checksum.
+
+The wrapper reads `arbigentw.properties` from its own directory, leaves the current
+directory alone and keeps everything it downloads in the user cache, so the two files can
+live at the repository root or in a subdirectory and be invoked from anywhere. Project
+settings such as `.arbigent/settings.local.yml` are still read from the current directory.
+Anyone with Java 17 or later can then run arbigent without installing anything:
+
+```bash
+./arbigentw run --scenario-ids="open-model-page"
+```
+
+To move to another release, run the wrapper's own `wrapper` command; it rewrites both
+files with the new URL and checksum. Pass `--dir` whenever the wrapper's directory is not
+the current directory. The script itself comes from the release that is running, so run
+the command once more after the pin changed if the new release ships a newer script.
+
+```bash
+./arbigentw wrapper --version <version>
+./tools/arbigentw wrapper --version <version> --dir tools
+```
+
+`distributionVersion` in the properties file is metadata: the URL and the checksum decide
+what runs. An update bot such as Renovate can bump it with a regex manager like the one
+below, which changes only that line. Until someone runs the command above to update the URL
+and the checksum too, the wrapper refuses every command except `wrapper` while the version
+disagrees with the release archive named in the URL.
+
+```json5
+{
+  customManagers: [{
+    customType: "regex",
+    managerFilePatterns: ["/(^|/)arbigentw\\.properties$/"],
+    matchStrings: ["distributionVersion=(?<currentValue>\\S+)"],
+    depNameTemplate: "takahirom/arbigent",
+    datasourceTemplate: "github-releases",
+  }],
+}
+```
+
+`ARBIGENT_RELEASE_BASE_URL` points the pinning step at a mirror. The checksum that the
+pinning step reads is what decides which bytes may be installed, so it is fetched over
+HTTPS only and a redirect that leaves HTTPS is refused; the pinning step therefore needs
+`curl`. Pass `--sha256 <digest>` to `arbigent wrapper` to supply the digest yourself.
+
+The distribution is cached in `~/.arbigent/wrapper/dists`, so only the first run downloads
+it. Set `ARBIGENT_USER_HOME` to cache it somewhere else. The wrapper refuses to run a
+distribution whose checksum does not match the one recorded in the properties file.
+
 ```
 Usage: arbigent [<options>] <command> [<args>]...
 
@@ -296,6 +377,7 @@ Commands:
   tags
   graph
   guide      Print guides for AI agents working with arbigent projects
+  wrapper    Generate the arbigentw wrapper script that downloads and runs a pinned arbigent release
 
 Guides for AI agents (print one with `arbigent guide <topic>`):
 setup: How to set up a repository: settings files, AI API keys, gitignore
@@ -498,6 +580,23 @@ arbigent tags
 arbigent graph
 ```
 
+**Keep the project file in dependency order** (depth-first: each scenario after the scenario it depends on, together with everything that depends on it, before the next sibling; roots and siblings in their declared order). `sort` also writes a *position comment* above every scenario so that anyone reading one scenario in the flat YAML — including a coding agent — can see its ancestors and its direct dependents without searching the file. Only the scenario blocks are reordered and only these comments are rewritten; quoting, other comments and unknown keys are left as they are. The UI writes the same comments on save; set `settings.positionComments: false` in the project file to turn them off.
+```bash
+arbigent sort            # rewrite the project file
+arbigent sort --diff     # CI check: print what would change, exit 1 if anything
+```
+```yaml
+scenarios:
+# The "# tree:" lines below are generated from `dependency` by `arbigent sort` (and on UI save); do not edit them, rerun `arbigent sort`.
+# tree: launch-app | children: open-search, open-settings
+- id: "launch-app"
+  goal: "Launch the app"
+# tree: launch-app > open-search | children: type-keyword
+- id: "open-search"
+  goal: "Open search"
+  dependency: "launch-app"
+```
+
 **Run a one-shot task without a project file:**
 
 `arbigent run task` executes a single ad-hoc goal on the connected device, using the same AI and OS options as `arbigent run`:
@@ -525,6 +624,7 @@ The CLI is designed so that AI coding agents (Claude Code, Codex, etc.) can oper
 
 - `arbigent --help` ends with the list of built-in guide topics, and `arbigent guide <topic>` prints an agent-oriented guide (`setup`, `writing-yaml`, `inspecting-project`, `running-scenarios`, `debugging-failures`).
 - `arbigent scenarios`, `arbigent tags`, and `arbigent graph` let an agent inspect a project without an AI API key or a device, and `arbigent run --dry-run` previews which scenarios would run without needing a device.
+- `arbigent sort` keeps the YAML in dependency order and refreshes the `# tree: ...` position comment above each scenario, so an agent editing one scenario sees where it sits in the dependency tree; `arbigent sort --diff` in CI catches files that drift after a hand edit.
 - `arbigent run` writes machine-readable results to `arbigent-result/result.yml` alongside the HTML report and screenshots, so an agent can check the outcome and debug failures.
 
 For example, you can instruct your agent:

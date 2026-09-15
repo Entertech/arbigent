@@ -261,9 +261,18 @@ public data class ArbigentProjectSettings(
   public val mcpJson: String = DefaultMcpJson,
   public val deviceFormFactor: ArbigentScenarioDeviceFormFactor = ArbigentScenarioDeviceFormFactor.Unspecified,
   public val additionalActions: List<String>? = null,
+  // Retry count for scenarios that do not declare their own. Absent means DefaultMaxRetry.
+  public val maxRetry: Int? = null,
+  /**
+   * Whether saving writes a `# tree: root > ... > id | children: ...` comment above each
+   * scenario (see [ArbigentScenarioSorter]). Derived from `dependency` on every save; `false`
+   * removes them.
+   */
+  public val positionComments: Boolean = true,
 ) {
   public companion object {
     public const val DefaultMcpJson: String = "{}"
+    public const val DefaultMaxRetry: Int = 3
   }
 }
 
@@ -493,7 +502,7 @@ public fun List<ArbigentScenarioContent>.createArbigentScenario(
   return ArbigentScenario(
     id = scenario.id,
     agentTasks = result,
-    maxRetry = scenario.maxRetry,
+    maxRetry = scenario.maxRetry ?: projectSettings.maxRetry ?: ArbigentProjectSettings.DefaultMaxRetry,
     replayWithFallback = replayWithFallback,
     maxStepCount = scenario.maxStep,
     tags = scenario.tags,
@@ -538,7 +547,8 @@ public class ArbigentScenarioContent @OptIn(ExperimentalUuidApi::class) construc
   public val initializeMethods: InitializationMethod = InitializationMethod.Noop,
   @YamlMultiLineStringStyle(MultiLineStringStyle.Literal)
   public val noteForHumans: String = "",
-  public val maxRetry: Int = 3,
+  // Absent means the project setting, and DefaultMaxRetry when that is absent too.
+  public val maxRetry: Int? = null,
   public val maxStep: Int = 10,
   public val tags: ArbigentContentTags = setOf(),
   public val deviceFormFactor: ArbigentScenarioDeviceFormFactor = ArbigentScenarioDeviceFormFactor.Unspecified,
@@ -663,14 +673,26 @@ public class ArbigentProjectSerializer(
     }
   )
 
+  /** Builds the whole text before opening [file], so a failure while encoding leaves the file as it was. */
   public fun save(projectFileContent: ArbigentProjectFileContent, file: File) {
-    save(projectFileContent, file.outputStream())
+    val text = encodeToFileText(projectFileContent)
+    file.outputStream().use { fileSystem.writeText(it, text) }
   }
 
-  private fun save(projectFileContent: ArbigentProjectFileContent, outputStream: OutputStream) {
-    val jsonString =
-      yaml.encodeToString(ArbigentProjectFileContent.serializer(), projectFileContent)
-    fileSystem.writeText(outputStream, jsonString)
+  /**
+   * The text [save] writes: the encoded project plus the position comments `arbigent sort` would
+   * add, so a file saved here is already in the form `arbigent sort --diff` accepts. The encoder
+   * already writes scenarios in dependency order (callers pass them sorted), so this only adds
+   * the comments; [encodeToString] stays the comment-free form used for change tracking.
+   */
+  @OptIn(ArbigentInternalApi::class)
+  public fun encodeToFileText(projectFileContent: ArbigentProjectFileContent): String {
+    val encoded = encodeToString(projectFileContent)
+    return ArbigentScenarioSorter.sort(
+      yamlText = encoded,
+      content = projectFileContent,
+      positionComments = projectFileContent.settings.positionComments,
+    ).yaml
   }
 
   public fun load(file: File): ArbigentProjectFileContent {
